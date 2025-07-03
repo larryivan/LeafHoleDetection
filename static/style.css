@@ -1,0 +1,139 @@
+/* Enhanced animations and effects */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+.upload-area.processing {
+    animation: pulse 2s infinite;
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.result-card {
+    animation: slideInUp 0.6s ease-out;
+}
+
+.result-card:nth-child(1) { animation-delay: 0.1s; }
+.result-card:nth-child(2) { animation-delay: 0.2s; }
+.result-card:nth-child(3) { animation-delay: 0.3s; }
+
+/* Canvas drawing styles */
+.canvas-container {
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    border-radius: 15px;
+    overflow: hidden;
+}
+
+.edit-canvas {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+/* Tool button hover effects */
+.tool-btn {
+    transition: all 0.3s ease;
+    border-width: 2px;
+}
+
+.tool-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+    .main-container {
+        margin: 10px;
+        padding: 20px;
+    }
+    
+    .header-section h1 {
+        font-size: 2rem;
+    }
+    
+    .tool-buttons {
+        text-align: center;
+    }
+    
+    .tool-btn {
+        margin: 2px;
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+}
+
+/* Language toggle styles */
+.language-toggle {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 25px;
+    padding: 5px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    backdrop-filter: blur(10px);
+}
+
+.lang-btn {
+    background: transparent;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 20px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    color: #667eea;
+}
+
+.lang-btn.active {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+}
+
+.lang-btn:hover {
+    transform: scale(1.05);
+}
+
+/* Footer and signature styles */
+.footer-signature {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+    border-top: 2px solid #667eea;
+    padding: 20px 0;
+    margin-top: 40px;
+    text-align: center;
+    border-radius: 15px 15px 0 0;
+}
+
+.signature-text {
+    color: #495057;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
+.signature-name {
+    font-weight: 600;
+    color: #667eea;
+}
+
+.signature-email {
+    color: #764ba2;
+    text-decoration: none;
+    transition: all 0.3s ease;
+}
+
+.signature-email:hover {
+    color: #667eea;
+    text-decoration: underline;
+}
