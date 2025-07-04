@@ -8,252 +8,423 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
         body {
-            background: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
         
-        .main-container {
+        .header {
             background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin: 20px auto;
-            padding: 30px;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        .container {
+            max-width: 1200px;
         }
         
         .upload-area {
-            border: 2px dashed #007bff;
-            border-radius: 10px;
-            padding: 40px 20px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            padding: 2rem;
             text-align: center;
+            background: white;
+            transition: all 0.2s;
             cursor: pointer;
-            transition: all 0.3s ease;
         }
         
         .upload-area:hover {
-            border-color: #0056b3;
-            background-color: #f8f9fa;
+            border-color: #007bff;
+            background: #f8f9fa;
         }
         
         .upload-area.dragover {
-            border-color: #0056b3;
-            background-color: #e3f2fd;
+            border-color: #007bff;
+            background: #e3f2fd;
         }
         
-        .result-image {
-            max-width: 100%;
-            height: auto;
-            border: 1px solid #dee2e6;
-            border-radius: 5px;
+        .mode-switch {
+            background: white;
+            border-radius: 8px;
+            padding: 0.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid #e0e0e0;
         }
+        
+        .card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .stat-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: #666;
+        }
+        
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .image-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .image-card img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+        }
+        
+        .image-card .card-body {
+            padding: 0.75rem;
+        }
+        
+        .batch-item {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+        }
+        
+        .batch-header {
+            background: #f8f9fa;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .batch-content {
+            padding: 1rem;
+        }
+        
+        .btn-group .btn {
+            border-radius: 6px;
+        }
+        
+        .processing {
+            background: white;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            margin: 2rem 0;
+        }
+        
+        .hidden { display: none !important; }
         
         .canvas-container {
+            border: 2px solid #ddd;
+            border-radius: 8px;
             display: inline-block;
-            border: 2px solid #dee2e6;
-            border-radius: 5px;
+            background: #f9f9f9;
         }
         
         .edit-canvas {
-            cursor: crosshair;
+            display: block;
             max-width: 100%;
-            height: auto;
+            cursor: crosshair;
         }
         
-        .processing, .results, .manual-edit {
-            display: none;
+        .toolbar {
+            background: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
         }
         
-        .language-toggle {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-        }
-
-        .lang-btn {
+        .collapse-btn {
             background: none;
-            border: 1px solid #007bff;
+            border: none;
             color: #007bff;
-            padding: 5px 10px;
-            margin: 0 2px;
-            border-radius: 3px;
-            cursor: pointer;
+            padding: 0;
+            margin-left: auto;
         }
-
-        .lang-btn.active {
-            background: #007bff;
-            color: white;
-        }
-
-        .footer-signature {
+        
+        .footer {
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            padding: 2rem 0;
+            margin-top: 3rem;
             text-align: center;
-            margin: 40px 0;
-            padding: 20px;
-            border-top: 1px solid #dee2e6;
             color: #666;
+            font-size: 0.875rem;
         }
     </style>
 </head>
 <body>
-    <!-- Language Toggle -->
-    <div class="language-toggle">
-        <button class="lang-btn active" data-lang="en" onclick="setLanguage('en')">EN</button>
-        <button class="lang-btn" data-lang="zh" onclick="setLanguage('zh')">中文</button>
+    <!-- Header -->
+    <div class="header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col">
+                    <h1 class="h4 mb-0" data-i18n="title">叶片虫洞检测系统</h1>
+                    <small class="text-muted" data-i18n="subtitle">基于AI的叶片分析与手动编辑</small>
+                </div>
+                <div class="col-auto">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-secondary" onclick="setLanguage('zh')">中文</button>
+                        <button class="btn btn-outline-secondary" onclick="setLanguage('en')">EN</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <div class="container mt-4">
-        <div class="main-container">
-            <!-- Header -->
-            <div class="text-center mb-4">
-                <h1 data-i18n="title">Leaf Hole Detection System</h1>
-                <p class="text-muted" data-i18n="subtitle">AI-powered leaf analysis with manual editing</p>
+    <div class="container">
+        <!-- Mode Selection -->
+        <div class="mode-switch">
+            <div class="btn-group w-100" role="group">
+                <input type="radio" class="btn-check" name="mode" id="singleMode" checked>
+                <label class="btn btn-outline-primary" for="singleMode" onclick="setMode('single')">
+                    <i class="fas fa-image me-2"></i><span data-i18n="singleMode">单张图像</span>
+                </label>
+                <input type="radio" class="btn-check" name="mode" id="batchMode">
+                <label class="btn btn-outline-primary" for="batchMode" onclick="setMode('batch')">
+                    <i class="fas fa-images me-2"></i><span data-i18n="batchMode">批量处理</span>
+                </label>
             </div>
+        </div>
 
-            <!-- Upload Section -->
-            <div class="row justify-content-center">
-                <div class="col-md-8">
-                    <div class="upload-area" id="uploadArea">
-                        <i class="fas fa-cloud-upload-alt fa-3x text-primary mb-3"></i>
-                        <h5 data-i18n="uploadTitle">Drag & Drop your leaf image here</h5>
-                        <p class="text-muted" data-i18n="uploadSubtitle">or click to select a file</p>
-                        <input type="file" id="fileInput" accept="image/*" style="display: none;">
-                        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-                            <span data-i18n="chooseFile">Choose File</span>
+        <!-- Upload Areas -->
+        <div id="singleUploadArea" class="upload-area">
+            <i class="fas fa-cloud-upload-alt fa-2x text-muted mb-3"></i>
+            <h5 data-i18n="uploadTitle">拖拽叶片图像到此处</h5>
+            <p class="text-muted mb-3" data-i18n="uploadSubtitle">或点击选择文件</p>
+            <button type="button" class="btn btn-primary">
+                <span data-i18n="chooseFile">选择文件</span>
+            </button>
+            <div class="mt-2">
+                <small class="text-muted" data-i18n="uploadInfo">支持格式：PNG, JPG, JPEG, GIF, BMP (最大16MB)</small><br>
+                <small class="text-info" data-i18n="referenceInfo">💡 包含1cm×1cm参照方块可获得绝对面积测量</small>
+            </div>
+        </div>
+
+        <div id="batchUploadArea" class="upload-area hidden">
+            <i class="fas fa-images fa-2x text-muted mb-3"></i>
+            <h5 data-i18n="batchUploadTitle">拖拽多张叶片图像到此处</h5>
+            <p class="text-muted mb-3" data-i18n="batchUploadSubtitle">或点击选择多个文件</p>
+            <button type="button" class="btn btn-primary">
+                <span data-i18n="chooseFiles">选择文件</span>
+            </button>
+            <div class="mt-2">
+                <small class="text-muted" data-i18n="uploadInfo">支持格式：PNG, JPG, JPEG, GIF, BMP (最大16MB)</small><br>
+                <small class="text-info" data-i18n="referenceInfo">💡 包含1cm×1cm参照方块可获得绝对面积测量</small>
+            </div>
+        </div>
+
+        <!-- Processing Indicator -->
+        <div id="processingSection" class="processing hidden">
+            <div class="spinner-border text-primary mb-3" role="status"></div>
+            <h5 data-i18n="processing">正在处理图像...</h5>
+            <p class="text-muted" data-i18n="processingSubtitle">AI正在分析您的叶片图像</p>
+        </div>
+
+        <!-- Single Image Results -->
+        <div id="singleResults" class="hidden">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0" data-i18n="resultsTitle">检测结果</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Statistics -->
+                    <div class="stats-grid" id="statsGrid">
+                        <div class="stat-card">
+                            <div class="stat-value text-primary" id="holeRatio">-</div>
+                            <div class="stat-label" data-i18n="holeRatio">虫洞占比</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-success" id="leafArea">-</div>
+                            <div class="stat-label" data-i18n="leafArea">叶片面积</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-danger" id="holeArea">-</div>
+                            <div class="stat-label" data-i18n="holeArea">虫洞面积</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-warning" id="holeCount">-</div>
+                            <div class="stat-label" data-i18n="holeCount">虫洞数量</div>
+                        </div>
+                        <div class="stat-card hidden" id="leafAreaCm2Card">
+                            <div class="stat-value text-success" id="leafAreaCm2">-</div>
+                            <div class="stat-label" data-i18n="leafAreaCm2">叶片面积 (cm²)</div>
+                        </div>
+                        <div class="stat-card hidden" id="holeAreaCm2Card">
+                            <div class="stat-value text-danger" id="holeAreaCm2">-</div>
+                            <div class="stat-label" data-i18n="holeAreaCm2">虫洞面积 (cm²)</div>
+                        </div>
+                    </div>
+
+                    <!-- Reference Info -->
+                    <div id="referenceInfo" class="alert alert-info hidden">
+                        <i class="fas fa-ruler me-2"></i>
+                        <span data-i18n="referenceDetected">检测到参照方块</span>
+                        - <span id="pixelsPerCm">-</span> <span data-i18n="pixelsPerCm">像素每厘米</span>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="text-center mb-3">
+                        <button class="btn btn-warning me-2" onclick="showManualEdit()">
+                            <i class="fas fa-edit me-2"></i><span data-i18n="manualEdit">手动编辑</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="resetApp()">
+                            <i class="fas fa-redo me-2"></i><span data-i18n="newAnalysis">重新分析</span>
                         </button>
                     </div>
+
+                    <!-- Images -->
+                    <div class="image-grid">
+                        <div class="image-card">
+                            <img id="originalImage" src="" alt="Original">
+                            <div class="card-body">
+                                <h6 class="card-title" data-i18n="originalImage">原始图像</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img id="enhancedImage" src="" alt="Enhanced">
+                            <div class="card-body">
+                                <h6 class="card-title" data-i18n="enhancedImage">增强图像</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img id="leafMask" src="" alt="Leaf Mask">
+                            <div class="card-body">
+                                <h6 class="card-title" data-i18n="leafSegmentation">叶片分割</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img id="holesImage" src="" alt="Holes">
+                            <div class="card-body">
+                                <h6 class="card-title" data-i18n="detectedHoles">检测到的虫洞</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img id="resultImage" src="" alt="Result">
+                            <div class="card-body">
+                                <h6 class="card-title" data-i18n="finalResult">最终结果</h6>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Batch Results -->
+        <div id="batchResults" class="hidden">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0" data-i18n="batchResultsTitle">批量处理结果</h5>
+                    <button class="btn btn-success btn-sm" onclick="exportBatchResults()">
+                        <i class="fas fa-download me-2"></i><span data-i18n="exportResults">导出结果</span>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <!-- Summary Stats -->
+                    <div class="stats-grid" id="batchStatsGrid">
+                        <div class="stat-card">
+                            <div class="stat-value text-primary" id="totalFiles">-</div>
+                            <div class="stat-label" data-i18n="totalFiles">总文件数</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-success" id="successfulFiles">-</div>
+                            <div class="stat-label" data-i18n="successfulFiles">成功处理</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-warning" id="avgHoleRatio">-</div>
+                            <div class="stat-label" data-i18n="avgHoleRatio">平均虫洞占比</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-info" id="filesWithReference">-</div>
+                            <div class="stat-label" data-i18n="filesWithReference">含参照方块</div>
+                        </div>
+                    </div>
+
+                    <!-- Absolute Area Summary -->
+                    <div id="absoluteAreaSummary" class="stats-grid hidden">
+                        <div class="stat-card">
+                            <div class="stat-value text-success" id="totalLeafAreaCm2">-</div>
+                            <div class="stat-label" data-i18n="totalLeafAreaCm2">总叶片面积 (cm²)</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-danger" id="totalHoleAreaCm2">-</div>
+                            <div class="stat-label" data-i18n="totalHoleAreaCm2">总虫洞面积 (cm²)</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-primary" id="overallHoleRatioCm2">-</div>
+                            <div class="stat-label" data-i18n="overallHoleRatioCm2">总体虫洞占比</div>
+                        </div>
+                    </div>
+
+                    <!-- Individual Results -->
+                    <div id="batchItemsContainer"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manual Edit Modal -->
+        <div id="manualEditModal" class="hidden">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0" data-i18n="manualEditTitle">手动编辑模式</h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted" data-i18n="manualEditDesc">点击并拖拽选择叶片区域或虫洞。使用下方工具切换模式。</p>
+                    
+                    <div class="toolbar">
+                        <div class="btn-group me-3">
+                            <button class="btn btn-outline-success active" id="leafTool" onclick="setTool('leaf')">
+                                <span data-i18n="selectLeafArea">选择叶片区域</span>
+                            </button>
+                            <button class="btn btn-outline-danger" id="holeTool" onclick="setTool('hole')">
+                                <span data-i18n="markHoles">标记虫洞</span>
+                            </button>
+                        </div>
+                        <button class="btn btn-outline-secondary me-2" onclick="clearCanvas()">
+                            <span data-i18n="clearAll">清除全部</span>
+                        </button>
+                        <button class="btn btn-primary me-2" onclick="recalculate()">
+                            <span data-i18n="recalculate">重新计算</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="hideManualEdit()">
+                            <span data-i18n="cancel">取消</span>
+                        </button>
+                    </div>
+                    
+                    <div class="text-center">
+                        <div class="canvas-container">
+                            <canvas id="editCanvas" class="edit-canvas"></canvas>
+                        </div>
+                    </div>
+                    
                     <div class="mt-2 text-center">
-                        <small class="text-muted" data-i18n="uploadInfo">Supported formats: PNG, JPG, JPEG, GIF, BMP (Max 16MB)</small>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Processing Section -->
-            <div class="text-center mt-4 processing" id="processingSection">
-                <div class="spinner-border text-primary" role="status"></div>
-                <h5 class="mt-3" data-i18n="processing">Processing Image...</h5>
-                <p class="text-muted" data-i18n="processingSubtitle">AI is analyzing your leaf image</p>
-            </div>
-
-            <!-- Results Section -->
-            <div class="results" id="resultsSection">
-                <!-- Statistics -->
-                <div class="row mt-4">
-                    <div class="col-12">
-                        <div class="card bg-primary text-white">
-                            <div class="card-body text-center">
-                                <h4 data-i18n="resultsTitle">Detection Results</h4>
-                                <div class="row mt-3">
-                                    <div class="col-3">
-                                        <h5 id="holeRatio">-</h5>
-                                        <small data-i18n="holeRatio">Hole Ratio</small>
-                                    </div>
-                                    <div class="col-3">
-                                        <h5 id="leafArea">-</h5>
-                                        <small data-i18n="leafArea">Leaf Area</small>
-                                    </div>
-                                    <div class="col-3">
-                                        <h5 id="holeArea">-</h5>
-                                        <small data-i18n="holeArea">Hole Area</small>
-                                    </div>
-                                    <div class="col-3">
-                                        <h5 id="holeCount">-</h5>
-                                        <small data-i18n="holeCount">Hole Count</small>
-                                    </div>
-                                </div>
-                                <div class="mt-3">
-                                    <button class="btn btn-light me-2" onclick="showManualEdit()">
-                                        <span data-i18n="manualEdit">Manual Edit</span>
-                                    </button>
-                                    <button class="btn btn-outline-light" onclick="resetApp()">
-                                        <span data-i18n="newAnalysis">New Analysis</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Images -->
-                <div class="row mt-4">
-                    <div class="col-md-4 mb-3">
-                        <div class="card">
-                            <div class="card-header" data-i18n="originalImage">Original Image</div>
-                            <div class="card-body p-2">
-                                <img id="originalImage" class="result-image" src="" alt="Original">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <div class="card">
-                            <div class="card-header" data-i18n="enhancedImage">Enhanced Image</div>
-                            <div class="card-body p-2">
-                                <img id="enhancedImage" class="result-image" src="" alt="Enhanced">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <div class="card">
-                            <div class="card-header" data-i18n="leafSegmentation">Leaf Segmentation</div>
-                            <div class="card-body p-2">
-                                <img id="leafMask" class="result-image" src="" alt="Leaf Mask">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col-md-6 mb-3">
-                        <div class="card">
-                            <div class="card-header" data-i18n="detectedHoles">Detected Holes</div>
-                            <div class="card-body p-2">
-                                <img id="holesImage" class="result-image" src="" alt="Holes">
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6 mb-3">
-                        <div class="card">
-                            <div class="card-header" data-i18n="finalResult">Final Result</div>
-                            <div class="card-body p-2">
-                                <img id="resultImage" class="result-image" src="" alt="Result">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Manual Edit Section -->
-            <div class="manual-edit" id="manualEditSection">
-                <div class="card mt-4">
-                    <div class="card-header bg-warning text-dark">
-                        <h5 class="mb-0" data-i18n="manualEditTitle">Manual Editing Mode</h5>
-                    </div>
-                    <div class="card-body">
-                        <p data-i18n="manualEditDesc">Click and drag to select leaf area or holes. Use the tools below to switch between modes.</p>
-                        
-                        <div class="text-center mb-3">
-                            <button class="btn btn-outline-success me-2 tool-btn active" id="leafTool" onclick="setTool('leaf')">
-                                <span data-i18n="selectLeafArea">Select Leaf Area</span>
-                            </button>
-                            <button class="btn btn-outline-danger me-2 tool-btn" id="holeTool" onclick="setTool('hole')">
-                                <span data-i18n="markHoles">Mark Holes</span>
-                            </button>
-                            <button class="btn btn-outline-secondary me-2" onclick="clearCanvas()">
-                                <span data-i18n="clearAll">Clear All</span>
-                            </button>
-                            <button class="btn btn-primary me-2" onclick="recalculate()">
-                                <span data-i18n="recalculate">Recalculate</span>
-                            </button>
-                            <button class="btn btn-secondary" onclick="hideManualEdit()">
-                                <span data-i18n="cancel">Cancel</span>
-                            </button>
-                        </div>
-                        
-                        <div class="text-center">
-                            <div class="canvas-container">
-                                <canvas id="editCanvas" class="edit-canvas"></canvas>
-                            </div>
-                        </div>
-                        
-                        <div class="mt-2 text-center">
-                            <small class="text-muted" data-i18n="canvasInfo">Left click and drag to draw selections. Switch tools to mark different areas.</small>
-                        </div>
+                        <small class="text-muted" data-i18n="canvasInfo">左键点击并拖拽绘制选择区域。切换工具标记不同区域。</small>
                     </div>
                 </div>
             </div>
@@ -261,13 +432,16 @@
     </div>
 
     <!-- Footer -->
-    <div class="footer-signature">
-        <p>
-            <span data-i18n="developer">Developed by</span> <strong>Larry Ivan Han</strong><br>
-            <span data-i18n="contact">Contact:</span> <a href="mailto:larryivanhan@gmail.com">larryivanhan@gmail.com</a>
-            <div>github: <a>https://github.com/larryivan/LeafHoleDetection</a></div>
-        </p>
+    <div class="footer">
+        <div class="container">
+            <span data-i18n="developer">开发者</span> <strong>Larry Ivan Han</strong><br>
+            <span data-i18n="contact">联系方式：</span> <a href="mailto:larryivanhan@gmail.com">larryivanhan@gmail.com</a>
+        </div>
     </div>
+
+    <!-- Hidden file inputs -->
+    <input type="file" id="fileInput" accept="image/*" style="display: none;">
+    <input type="file" id="batchFileInput" accept="image/*" multiple style="display: none;">
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/i18n.js') }}"></script>
@@ -278,34 +452,123 @@
         let leafSelections = [];
         let holeSelections = [];
         let currentImage = null;
+        let currentMode = 'single';
+        let batchResults = null;
+        let currentEditingItem = null;
 
-        const uploadArea = document.getElementById('uploadArea');
+        const singleUploadArea = document.getElementById('singleUploadArea');
+        const batchUploadArea = document.getElementById('batchUploadArea');
         const fileInput = document.getElementById('fileInput');
+        const batchFileInput = document.getElementById('batchFileInput');
         const processingSection = document.getElementById('processingSection');
-        const resultsSection = document.getElementById('resultsSection');
+        const resultsSection = document.getElementById('singleResults');
+        const batchResultsSection = document.getElementById('batchResults');
 
-        // Drag and drop functionality
-        uploadArea.addEventListener('click', () => fileInput.click());
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.classList.add('dragover');
-        });
-        uploadArea.addEventListener('dragleave', () => {
-            uploadArea.classList.remove('dragover');
-        });
-        uploadArea.addEventListener('drop', (e) => {
-            e.preventDefault();
-            uploadArea.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                processFile(files[0]);
+        // Mode switching
+        function setMode(mode) {
+            currentMode = mode;
+            resetApp();
+            if (mode === 'single') {
+                singleUploadArea.classList.remove('hidden');
+                batchUploadArea.classList.add('hidden');
+            } else {
+                singleUploadArea.classList.add('hidden');
+                batchUploadArea.classList.remove('hidden');
             }
-        });
+        }
 
-        fileInput.addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                processFile(e.target.files[0]);
-            }
+        // Language switching
+        function setLanguage(lang) {
+            currentLang = lang;
+            localStorage.setItem('language', lang);
+            updateLanguage();
+        }
+
+        function updateLanguage() {
+            document.querySelectorAll('[data-i18n]').forEach(element => {
+                const key = element.getAttribute('data-i18n');
+                element.textContent = t(key);
+            });
+        }
+
+        // Initialize event listeners
+        function initEventListeners() {
+            // Single file upload
+            singleUploadArea.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                fileInput.click();
+            });
+            
+            singleUploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                singleUploadArea.classList.add('dragover');
+            });
+            
+            singleUploadArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                singleUploadArea.classList.remove('dragover');
+            });
+            
+            singleUploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                singleUploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    processFile(files[0]);
+                }
+            });
+
+            // Batch files upload
+            batchUploadArea.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                batchFileInput.click();
+            });
+            
+            batchUploadArea.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                batchUploadArea.classList.add('dragover');
+            });
+            
+            batchUploadArea.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                batchUploadArea.classList.remove('dragover');
+            });
+            
+            batchUploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                batchUploadArea.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    processBatchFiles(files);
+                }
+            });
+
+            // File input changes
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    processFile(e.target.files[0]);
+                }
+            });
+
+            batchFileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    processBatchFiles(e.target.files);
+                }
+            });
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            initEventListeners();
+            updateLanguage();
         });
 
         function processFile(file) {
@@ -319,9 +582,9 @@
                 return;
             }
 
-            processingSection.style.display = 'block';
-            resultsSection.style.display = 'none';
-            document.getElementById('manualEditSection').style.display = 'none';
+            processingSection.classList.remove('hidden');
+            resultsSection.classList.add('hidden');
+            document.getElementById('manualEditModal').classList.add('hidden');
 
             const formData = new FormData();
             formData.append('file', file);
@@ -332,7 +595,7 @@
             })
             .then(response => response.json())
             .then(data => {
-                processingSection.style.display = 'none';
+                processingSection.classList.add('hidden');
                 if (data.success) {
                     displayResults(data);
                 } else {
@@ -340,16 +603,31 @@
                 }
             })
             .catch(error => {
-                processingSection.style.display = 'none';
+                processingSection.classList.add('hidden');
                 alert(t('processingError') + ': ' + error.message);
             });
         }
 
         function displayResults(data) {
             document.getElementById('holeRatio').textContent = data.hole_ratio;
-            document.getElementById('leafArea').textContent = data.statistics.leaf_area.toLocaleString();
-            document.getElementById('holeArea').textContent = data.statistics.hole_area.toLocaleString();
+            document.getElementById('leafArea').textContent = data.statistics.leaf_area_pixels.toLocaleString();
+            document.getElementById('holeArea').textContent = data.statistics.hole_area_pixels.toLocaleString();
             document.getElementById('holeCount').textContent = data.statistics.hole_count;
+
+            // Show/hide absolute area columns based on reference detection
+            if (data.statistics.has_reference && data.statistics.reference_detected) {
+                document.getElementById('leafAreaCm2Card').classList.remove('hidden');
+                document.getElementById('holeAreaCm2Card').classList.remove('hidden');
+                document.getElementById('referenceInfo').classList.remove('hidden');
+                
+                document.getElementById('leafAreaCm2').textContent = data.statistics.leaf_area_cm2.toFixed(2);
+                document.getElementById('holeAreaCm2').textContent = data.statistics.hole_area_cm2.toFixed(2);
+                document.getElementById('pixelsPerCm').textContent = data.statistics.pixels_per_cm.toFixed(1);
+            } else {
+                document.getElementById('leafAreaCm2Card').classList.add('hidden');
+                document.getElementById('holeAreaCm2Card').classList.add('hidden');
+                document.getElementById('referenceInfo').classList.add('hidden');
+            }
 
             document.getElementById('originalImage').src = data.images.original;
             document.getElementById('enhancedImage').src = data.images.enhanced;
@@ -357,30 +635,50 @@
             document.getElementById('holesImage').src = data.images.holes;
             document.getElementById('resultImage').src = data.images.result;
 
-            resultsSection.style.display = 'block';
+            resultsSection.classList.remove('hidden');
         }
 
         function updateStatistics(stats) {
             document.getElementById('holeRatio').textContent = stats.hole_ratio;
-            document.getElementById('leafArea').textContent = stats.leaf_area.toLocaleString();
-            document.getElementById('holeArea').textContent = stats.hole_area.toLocaleString();
+            document.getElementById('leafArea').textContent = stats.leaf_area_pixels.toLocaleString();
+            document.getElementById('holeArea').textContent = stats.hole_area_pixels.toLocaleString();
             document.getElementById('holeCount').textContent = stats.hole_count;
+            
+            // Update absolute areas if available
+            if (stats.has_reference && stats.reference_detected) {
+                document.getElementById('leafAreaCm2Card').classList.remove('hidden');
+                document.getElementById('holeAreaCm2Card').classList.remove('hidden');
+                document.getElementById('referenceInfo').classList.remove('hidden');
+                
+                document.getElementById('leafAreaCm2').textContent = stats.leaf_area_cm2.toFixed(2);
+                document.getElementById('holeAreaCm2').textContent = stats.hole_area_cm2.toFixed(2);
+                document.getElementById('pixelsPerCm').textContent = stats.pixels_per_cm.toFixed(1);
+            } else {
+                document.getElementById('leafAreaCm2Card').classList.add('hidden');
+                document.getElementById('holeAreaCm2Card').classList.add('hidden');
+                document.getElementById('referenceInfo').classList.add('hidden');
+            }
         }
 
         function resetApp() {
-            resultsSection.style.display = 'none';
-            processingSection.style.display = 'none';
-            document.getElementById('manualEditSection').style.display = 'none';
+            resultsSection.classList.add('hidden');
+            processingSection.classList.add('hidden');
+            batchResultsSection.classList.add('hidden');
+            document.getElementById('manualEditModal').classList.add('hidden');
             fileInput.value = '';
+            batchFileInput.value = '';
+            batchResults = null;
         }
 
-        function showManualEdit() {
-            document.getElementById('manualEditSection').style.display = 'block';
+        function showManualEdit(itemData = null) {
+            currentEditingItem = itemData;
+            document.getElementById('manualEditModal').classList.remove('hidden');
             initCanvas();
         }
 
         function hideManualEdit() {
-            document.getElementById('manualEditSection').style.display = 'none';
+            document.getElementById('manualEditModal').classList.add('hidden');
+            currentEditingItem = null;
         }
 
         function initCanvas() {
@@ -394,7 +692,20 @@
                 ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                 currentImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
             };
-            img.src = document.getElementById('enhancedImage').src;
+            
+            // Get image source based on current context
+            if (currentEditingItem && currentEditingItem.images) {
+                img.src = currentEditingItem.images.enhanced;
+            } else {
+                const enhancedImg = document.getElementById('enhancedImage');
+                img.src = enhancedImg ? enhancedImg.src : '';
+            }
+            
+            // Clear existing event listeners and add new ones
+            canvas.removeEventListener('mousedown', startDrawing);
+            canvas.removeEventListener('mousemove', draw);
+            canvas.removeEventListener('mouseup', stopDrawing);
+            canvas.removeEventListener('mouseout', stopDrawing);
             
             canvas.addEventListener('mousedown', startDrawing);
             canvas.addEventListener('mousemove', draw);
@@ -499,7 +810,13 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    updateStatistics(data.statistics);
+                    if (currentEditingItem) {
+                        // Update batch item statistics
+                        updateBatchItemStatistics(currentEditingItem, data.statistics);
+                    } else {
+                        // Update single image statistics
+                        updateStatistics(data.statistics);
+                    }
                     hideManualEdit();
                     alert(t('recalculatedSuccess'));
                 } else {
@@ -508,6 +825,243 @@
             })
             .catch(error => {
                 alert(t('processingError') + ': ' + error.message);
+            });
+        }
+
+        function updateBatchItemStatistics(item, newStats) {
+            // Update the item in batchResults
+            const itemIndex = batchResults.results.findIndex(r => r.filename === item.filename);
+            if (itemIndex !== -1) {
+                batchResults.results[itemIndex].statistics = newStats;
+                batchResults.results[itemIndex].hole_ratio = newStats.hole_ratio;
+                
+                // Refresh the batch display
+                displayBatchResults(batchResults);
+            }
+        }
+
+        // Batch processing functions
+        function processBatchFiles(files) {
+            processingSection.classList.remove('hidden');
+            
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {
+                formData.append('files', files[i]);
+            }
+            
+            fetch('/batch_upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                processingSection.classList.add('hidden');
+                if (data.success) {
+                    batchResults = data;
+                    displayBatchResults(data);
+                } else {
+                    alert(t('processingError') + ': ' + data.error);
+                }
+            })
+            .catch(error => {
+                processingSection.classList.add('hidden');
+                alert(t('processingError') + ': ' + error.message);
+            });
+        }
+
+        function displayBatchResults(data) {
+            // Update summary statistics
+            document.getElementById('totalFiles').textContent = data.summary.total_files;
+            document.getElementById('successfulFiles').textContent = data.summary.successful_files;
+            document.getElementById('avgHoleRatio').textContent = data.summary.avg_hole_ratio || '-';
+            document.getElementById('filesWithReference').textContent = data.summary.files_with_reference || '0';
+            
+            // Show/hide absolute area summary
+            if (data.summary.files_with_reference > 0) {
+                document.getElementById('absoluteAreaSummary').classList.remove('hidden');
+                document.getElementById('totalLeafAreaCm2').textContent = data.summary.total_leaf_area_cm2.toFixed(2);
+                document.getElementById('totalHoleAreaCm2').textContent = data.summary.total_hole_area_cm2.toFixed(2);
+                document.getElementById('overallHoleRatioCm2').textContent = data.summary.overall_hole_ratio_cm2;
+            } else {
+                document.getElementById('absoluteAreaSummary').classList.add('hidden');
+            }
+            
+            // Populate individual results
+            const container = document.getElementById('batchItemsContainer');
+            container.innerHTML = '';
+            
+            data.results.forEach((result, index) => {
+                const item = createBatchItem(result, index);
+                container.appendChild(item);
+            });
+            
+            batchResultsSection.classList.remove('hidden');
+        }
+
+        function createBatchItem(result, index) {
+            const item = document.createElement('div');
+            item.className = 'batch-item';
+            item.innerHTML = `
+                <div class="batch-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-0">${result.filename}</h6>
+                        ${result.success ? 
+                            `<span class="badge bg-success">${t('success')}</span>` : 
+                            `<span class="badge bg-danger">Failed</span>`
+                        }
+                    </div>
+                    <button class="collapse-btn" type="button" data-bs-toggle="collapse" data-bs-target="#item-${index}" aria-expanded="false">
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                </div>
+                <div class="collapse" id="item-${index}">
+                    <div class="batch-content">
+                        ${result.success ? createSuccessfulItemContent(result, index) : createFailedItemContent(result)}
+                    </div>
+                </div>
+            `;
+            return item;
+        }
+
+        function createSuccessfulItemContent(result, index) {
+            return `
+                <!-- Statistics -->
+                <div class="stats-grid mb-3">
+                    <div class="stat-card">
+                        <div class="stat-value text-primary">${result.hole_ratio}</div>
+                        <div class="stat-label">${t('holeRatio')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value text-success">${result.statistics.leaf_area_pixels.toLocaleString()}</div>
+                        <div class="stat-label">${t('leafArea')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value text-danger">${result.statistics.hole_area_pixels.toLocaleString()}</div>
+                        <div class="stat-label">${t('holeArea')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value text-warning">${result.statistics.hole_count}</div>
+                        <div class="stat-label">${t('holeCount')}</div>
+                    </div>
+                    ${result.statistics.reference_detected ? `
+                        <div class="stat-card">
+                            <div class="stat-value text-success">${result.statistics.leaf_area_cm2.toFixed(2)}</div>
+                            <div class="stat-label">${t('leafAreaCm2')}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-danger">${result.statistics.hole_area_cm2.toFixed(2)}</div>
+                            <div class="stat-label">${t('holeAreaCm2')}</div>
+                        </div>
+                    ` : ''}
+                </div>
+
+                ${result.statistics.reference_detected ? `
+                    <div class="alert alert-info mb-3">
+                        <i class="fas fa-ruler me-2"></i>
+                        ${t('referenceDetected')} - ${result.statistics.pixels_per_cm.toFixed(1)} ${t('pixelsPerCm')}
+                    </div>
+                ` : ''}
+
+                <!-- Action Button -->
+                <div class="text-center mb-3">
+                    <button class="btn btn-warning btn-sm" onclick="editBatchItem(${index})">
+                        <i class="fas fa-edit me-2"></i>${t('manualEdit')}
+                    </button>
+                </div>
+
+                <!-- Processing Images -->
+                ${result.images ? `
+                    <div class="image-grid">
+                        <div class="image-card">
+                            <img src="${result.images.original}" alt="Original">
+                            <div class="card-body">
+                                <h6 class="card-title">${t('originalImage')}</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img src="${result.images.enhanced}" alt="Enhanced">
+                            <div class="card-body">
+                                <h6 class="card-title">${t('enhancedImage')}</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img src="${result.images.leaf_mask}" alt="Leaf Mask">
+                            <div class="card-body">
+                                <h6 class="card-title">${t('leafSegmentation')}</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img src="${result.images.holes}" alt="Holes">
+                            <div class="card-body">
+                                <h6 class="card-title">${t('detectedHoles')}</h6>
+                            </div>
+                        </div>
+                        <div class="image-card">
+                            <img src="${result.images.result}" alt="Result">
+                            <div class="card-body">
+                                <h6 class="card-title">${t('finalResult')}</h6>
+                            </div>
+                        </div>
+                    </div>
+                ` : `
+                    <div class="text-center">
+                        <p class="text-muted">${t('processImagesPending')}</p>
+                        <small class="text-muted">${t('processImagesNote')}</small>
+                    </div>
+                `}
+            `;
+        }
+
+        function createFailedItemContent(result) {
+            return `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    ${result.error || t('processingError')}
+                </div>
+            `;
+        }
+
+        function editBatchItem(index) {
+            const item = batchResults.results[index];
+            if (item && item.success && item.images) {
+                showManualEdit(item);
+            } else {
+                alert(t('batchEditPlaceholder'));
+            }
+        }
+
+        function exportBatchResults() {
+            if (!batchResults) {
+                alert('No batch results to export');
+                return;
+            }
+            
+            fetch('/export_batch_results', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(batchResults)
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.blob();
+                } else {
+                    throw new Error('Export failed');
+                }
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'leaf_hole_detection_results.csv';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            })
+            .catch(error => {
+                alert('Export failed: ' + error.message);
             });
         }
     </script>

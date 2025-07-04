@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify, send_file, session
+from flask import Flask, request, render_template, jsonify, send_file, session, make_response
 import os
 import cv2
 import numpy as np
@@ -70,11 +70,11 @@ def manual_edit():
         
         # Calculate new statistics
         if leaf_mask is not None and np.any(leaf_mask):
-            leaf_area = cv2.countNonZero(leaf_mask)
+            leaf_area_pixels = cv2.countNonZero(leaf_mask)
             # Ensure holes are within leaf area
             if holes_mask is not None:
                 holes_mask = cv2.bitwise_and(holes_mask, leaf_mask)
-            hole_area = cv2.countNonZero(holes_mask) if holes_mask is not None else 0
+            hole_area_pixels = cv2.countNonZero(holes_mask) if holes_mask is not None else 0
         else:
             return jsonify({'error': 'Please select a valid leaf area'}), 400
         
@@ -85,18 +85,42 @@ def manual_edit():
         else:
             hole_count = 0
         
-        hole_ratio = hole_area / leaf_area if leaf_area > 0 else 0
+        hole_ratio = hole_area_pixels / leaf_area_pixels if leaf_area_pixels > 0 else 0
         
         # Update stored data
         image_data['manual_leaf_mask'] = leaf_mask
         image_data['manual_holes_mask'] = holes_mask
         
+        # Get pixels per cm ratio from stored data
+        pixels_per_cm = image_data.get('pixels_per_cm')
+        
         statistics = {
             'hole_ratio': f"{hole_ratio:.2%}",
-            'leaf_area': leaf_area,
-            'hole_area': hole_area,
-            'hole_count': hole_count
+            'leaf_area_pixels': leaf_area_pixels,
+            'hole_area_pixels': hole_area_pixels,
+            'hole_count': hole_count,
+            'has_reference': pixels_per_cm is not None,
+            'pixels_per_cm': pixels_per_cm
         }
+        
+        # Add absolute areas if reference is available
+        if pixels_per_cm is not None:
+            from leaf_hole_detection import LeafHoleDetector
+            detector = LeafHoleDetector()
+            leaf_area_cm2 = detector.convert_to_absolute_area(leaf_area_pixels, pixels_per_cm)
+            hole_area_cm2 = detector.convert_to_absolute_area(hole_area_pixels, pixels_per_cm)
+            
+            statistics.update({
+                'leaf_area_cm2': leaf_area_cm2,
+                'hole_area_cm2': hole_area_cm2,
+                'reference_detected': True
+            })
+        else:
+            statistics.update({
+                'leaf_area_cm2': None,
+                'hole_area_cm2': None,
+                'reference_detected': False
+            })
         
         return jsonify({
             'success': True,
@@ -161,50 +185,88 @@ def upload_file():
             if image is None:
                 return jsonify({'error': 'Invalid image file'}), 400
             
-            # Process image
-            enhanced = detector.enhance_image_scan_effect(image)
-            leaf_mask, leaf_contour = detector.segment_leaf(enhanced)
+            # Process image with new comprehensive method
+            processing_results = detector.process_image(filepath)
             
-            if leaf_mask is None:
-                return jsonify({'error': 'Could not detect leaf in image'}), 400
+            if 'error' in processing_results:
+                return jsonify({'error': processing_results['error']}), 400
             
-            hole_contours, holes_binary = detector.detect_holes(enhanced, leaf_mask)
-            hole_ratio = detector.calculate_hole_ratio(leaf_mask, holes_binary)
+            # Extract results
+            hole_ratio = processing_results['hole_ratio']
+            leaf_area_pixels = processing_results['leaf_area_pixels']
+            hole_area_pixels = processing_results['hole_area_pixels']
+            hole_count = processing_results['hole_count']
+            pixels_per_cm = processing_results['pixels_per_cm']
+            has_reference = processing_results['has_reference']
+            
+            # Get image data
+            original_image = processing_results['original_image']
+            enhanced = processing_results['enhanced_image']
+            leaf_mask = processing_results['leaf_mask']
+            holes_binary = processing_results['holes_binary']
+            hole_contours = processing_results['hole_contours']
             
             # Store processed images for manual editing
             processed_images[session_id] = {
-                'original': image,
+                'original': original_image,
                 'enhanced': enhanced,
                 'leaf_mask': leaf_mask,
                 'holes_binary': holes_binary,
-                'hole_contours': hole_contours
+                'hole_contours': hole_contours,
+                'pixels_per_cm': pixels_per_cm  # Store for manual editing
             }
             
             # Create result visualization
             result_image = enhanced.copy()
             cv2.drawContours(result_image, hole_contours, -1, (0, 0, 255), 2)
             
+            # Draw reference square if detected
+            if has_reference:
+                ref_result = detector.detect_reference_square(original_image)
+                if ref_result is not None:
+                    ref_contour, _ = ref_result
+                    # Draw reference square with thick blue outline
+                    cv2.drawContours(result_image, [ref_contour], -1, (255, 0, 0), 3)
+                    # Add text label
+                    rect = cv2.boundingRect(ref_contour)
+                    cv2.putText(result_image, '1cm', (rect[0], rect[1]-10), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+            
             # Convert images to base64 for web display
-            original_b64 = image_to_base64(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+            original_b64 = image_to_base64(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB))
             enhanced_b64 = image_to_base64(cv2.cvtColor(enhanced, cv2.COLOR_BGR2RGB))
             leaf_mask_b64 = image_to_base64(leaf_mask)
             holes_b64 = image_to_base64(holes_binary)
             result_b64 = image_to_base64(cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB))
             
-            # Calculate statistics
-            leaf_area = cv2.countNonZero(leaf_mask)
-            hole_area = cv2.countNonZero(holes_binary)
-            hole_count = len(hole_contours)
+            # Prepare statistics
+            statistics = {
+                'leaf_area_pixels': leaf_area_pixels,
+                'hole_area_pixels': hole_area_pixels,
+                'hole_count': hole_count,
+                'ratio_decimal': hole_ratio,
+                'has_reference': has_reference,
+                'pixels_per_cm': pixels_per_cm
+            }
+            
+            # Add absolute areas if reference is detected
+            if has_reference:
+                statistics.update({
+                    'leaf_area_cm2': processing_results['leaf_area_cm2'],
+                    'hole_area_cm2': processing_results['hole_area_cm2'],
+                    'reference_detected': True
+                })
+            else:
+                statistics.update({
+                    'leaf_area_cm2': None,
+                    'hole_area_cm2': None,
+                    'reference_detected': False
+                })
             
             results = {
                 'success': True,
                 'hole_ratio': f"{hole_ratio:.2%}",
-                'statistics': {
-                    'leaf_area': leaf_area,
-                    'hole_area': hole_area,
-                    'hole_count': hole_count,
-                    'ratio_decimal': hole_ratio
-                },
+                'statistics': statistics,
                 'images': {
                     'original': original_b64,
                     'enhanced': enhanced_b64,
@@ -226,6 +288,238 @@ def upload_file():
             return jsonify({'error': f'Processing failed: {str(e)}'}), 500
     
     return jsonify({'error': 'Invalid file type'}), 400
+
+@app.route('/batch_upload', methods=['POST'])
+def batch_upload():
+    if 'files' not in request.files:
+        return jsonify({'error': 'No files selected'}), 400
+    
+    files = request.files.getlist('files')
+    if not files or all(file.filename == '' for file in files):
+        return jsonify({'error': 'No files selected'}), 400
+    
+    # Validate file types
+    valid_files = []
+    for file in files:
+        if file and allowed_file(file.filename):
+            valid_files.append(file)
+    
+    if not valid_files:
+        return jsonify({'error': 'No valid image files found'}), 400
+    
+    # Process each file
+    results = []
+    detector = LeafHoleDetector()
+    detector.debug = False  # Disable matplotlib display for batch processing
+    
+    for i, file in enumerate(valid_files):
+        try:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"batch_{i}_{filename}")
+            file.save(filepath)
+            
+            # Process the image
+            processing_results = detector.process_image(filepath)
+            
+            if 'error' in processing_results:
+                results.append({
+                    'filename': filename,
+                    'success': False,
+                    'error': processing_results['error']
+                })
+            else:
+                # Extract key results for batch processing
+                hole_ratio = processing_results['hole_ratio']
+                leaf_area_pixels = processing_results['leaf_area_pixels']
+                hole_area_pixels = processing_results['hole_area_pixels']
+                hole_count = processing_results['hole_count']
+                pixels_per_cm = processing_results['pixels_per_cm']
+                has_reference = processing_results['has_reference']
+                
+                # Get image data
+                original_image = processing_results['original_image']
+                enhanced = processing_results['enhanced_image']
+                leaf_mask = processing_results['leaf_mask']
+                holes_binary = processing_results['holes_binary']
+                hole_contours = processing_results['hole_contours']
+                
+                # Create result visualization
+                result_image = enhanced.copy()
+                cv2.drawContours(result_image, hole_contours, -1, (0, 0, 255), 2)
+                
+                # Draw reference square if detected
+                if has_reference:
+                    ref_result = detector.detect_reference_square(original_image)
+                    if ref_result is not None:
+                        ref_contour, _ = ref_result
+                        cv2.drawContours(result_image, [ref_contour], -1, (255, 0, 0), 3)
+                        rect = cv2.boundingRect(ref_contour)
+                        cv2.putText(result_image, '1cm', (rect[0], rect[1]-10), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                
+                # Convert images to base64 for web display
+                images = {
+                    'original': image_to_base64(cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)),
+                    'enhanced': image_to_base64(cv2.cvtColor(enhanced, cv2.COLOR_BGR2RGB)),
+                    'leaf_mask': image_to_base64(leaf_mask),
+                    'holes': image_to_base64(holes_binary),
+                    'result': image_to_base64(cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB))
+                }
+                
+                result_item = {
+                    'filename': filename,
+                    'success': True,
+                    'hole_ratio': f"{hole_ratio:.2%}",
+                    'statistics': {
+                        'leaf_area_pixels': leaf_area_pixels,
+                        'hole_area_pixels': hole_area_pixels,
+                        'hole_count': hole_count,
+                        'ratio_decimal': hole_ratio,
+                        'has_reference': has_reference,
+                        'pixels_per_cm': pixels_per_cm
+                    },
+                    'images': images  # Include images for detailed display
+                }
+                
+                # Add absolute areas if reference is detected
+                if has_reference:
+                    result_item['statistics'].update({
+                        'leaf_area_cm2': processing_results['leaf_area_cm2'],
+                        'hole_area_cm2': processing_results['hole_area_cm2'],
+                        'reference_detected': True
+                    })
+                else:
+                    result_item['statistics'].update({
+                        'leaf_area_cm2': None,
+                        'hole_area_cm2': None,
+                        'reference_detected': False
+                    })
+                
+                results.append(result_item)
+            
+            # Clean up uploaded file
+            os.remove(filepath)
+            
+        except Exception as e:
+            results.append({
+                'filename': file.filename,
+                'success': False,
+                'error': f'Processing failed: {str(e)}'
+            })
+            # Clean up uploaded file on error
+            if os.path.exists(filepath):
+                os.remove(filepath)
+    
+    # Calculate summary statistics
+    successful_results = [r for r in results if r['success']]
+    total_files = len(results)
+    successful_files = len(successful_results)
+    
+    summary = {
+        'total_files': total_files,
+        'successful_files': successful_files,
+        'failed_files': total_files - successful_files
+    }
+    
+    if successful_results:
+        # Calculate average hole ratio
+        hole_ratios = [r['statistics']['ratio_decimal'] for r in successful_results]
+        avg_hole_ratio = sum(hole_ratios) / len(hole_ratios)
+        
+        # Calculate totals if any files have reference squares
+        files_with_reference = [r for r in successful_results if r['statistics']['has_reference']]
+        if files_with_reference:
+            total_leaf_area_cm2 = sum(r['statistics']['leaf_area_cm2'] for r in files_with_reference)
+            total_hole_area_cm2 = sum(r['statistics']['hole_area_cm2'] for r in files_with_reference)
+            
+            summary.update({
+                'avg_hole_ratio': f"{avg_hole_ratio:.2%}",
+                'files_with_reference': len(files_with_reference),
+                'total_leaf_area_cm2': total_leaf_area_cm2,
+                'total_hole_area_cm2': total_hole_area_cm2,
+                'overall_hole_ratio_cm2': f"{(total_hole_area_cm2 / total_leaf_area_cm2 * 100):.2f}%" if total_leaf_area_cm2 > 0 else "0%"
+            })
+        else:
+            summary.update({
+                'avg_hole_ratio': f"{avg_hole_ratio:.2%}",
+                'files_with_reference': 0,
+                'total_leaf_area_cm2': None,
+                'total_hole_area_cm2': None,
+                'overall_hole_ratio_cm2': None
+            })
+    
+    return jsonify({
+        'success': True,
+        'summary': summary,
+        'results': results
+    })
+
+@app.route('/export_batch_results', methods=['POST'])
+def export_batch_results():
+    """Export batch processing results to CSV"""
+    try:
+        data = request.json
+        if not data or 'results' not in data:
+            return jsonify({'error': 'No results data provided'}), 400
+        
+        results = data['results']
+        
+        # Create CSV content
+        import csv
+        import io
+        
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        header = ['Filename', 'Success', 'Hole Ratio', 'Leaf Area (pixels)', 'Hole Area (pixels)', 'Hole Count']
+        if any(r.get('statistics', {}).get('has_reference', False) for r in results if r.get('success')):
+            header.extend(['Leaf Area (cm²)', 'Hole Area (cm²)', 'Reference Detected', 'Pixels per cm'])
+        writer.writerow(header)
+        
+        # Write data rows
+        for result in results:
+            if result.get('success'):
+                stats = result.get('statistics', {})
+                row = [
+                    result.get('filename', ''),
+                    'Yes',
+                    result.get('hole_ratio', ''),
+                    stats.get('leaf_area_pixels', ''),
+                    stats.get('hole_area_pixels', ''),
+                    stats.get('hole_count', '')
+                ]
+                
+                if stats.get('has_reference'):
+                    row.extend([
+                        f"{stats.get('leaf_area_cm2', 0):.2f}",
+                        f"{stats.get('hole_area_cm2', 0):.2f}",
+                        'Yes',
+                        f"{stats.get('pixels_per_cm', 0):.2f}"
+                    ])
+                else:
+                    row.extend(['', '', 'No', ''])
+                    
+                writer.writerow(row)
+            else:
+                row = [result.get('filename', ''), 'No', '', '', '', '']
+                if any(r.get('statistics', {}).get('has_reference', False) for r in results if r.get('success')):
+                    row.extend(['', '', '', ''])
+                writer.writerow(row)
+        
+        # Get CSV content
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Create response
+        response = make_response(csv_content)
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = 'attachment; filename=leaf_hole_detection_results.csv'
+        
+        return response
+        
+    except Exception as e:
+        return jsonify({'error': f'Export failed: {str(e)}'}), 500
 
 @app.route('/health')
 def health_check():
