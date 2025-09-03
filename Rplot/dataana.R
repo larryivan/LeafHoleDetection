@@ -1,0 +1,304 @@
+# -------------------------------------------------------------------
+# 步骤 1: 环境准备
+# -------------------------------------------------------------------
+# 安装和加载所有需要的包
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+packages_to_install <- c("readxl", "dplyr", "tidyr", "ggplot2", "ggpubr", "purrr", "stringr", "broom")
+new_packages <- packages_to_install[!(packages_to_install %in% installed.packages()[,"Package"])]
+if(length(new_packages)) install.packages(new_packages)
+
+suppressPackageStartupMessages({
+  library(readxl)
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(ggpubr)
+  library(purrr)
+  library(stringr)
+  library(broom)
+})
+
+cat("✅ 所有需要的 R 包已成功加载。\n")
+
+# -------------------------------------------------------------------
+# 步骤 2: 全局美学设定 (统一图表风格)
+# -------------------------------------------------------------------
+# 设定颜色方案
+color_palette <- c("坡底 (Slope Bottom)" = "#3B82F6", "坡顶 (Slope Top)" = "#F97316")
+
+# 设定统一的 ggplot2 主题
+theme_set(
+  theme_classic(base_size = 14) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold", size = 18),
+      plot.subtitle = element_text(hjust = 0.5, size = 12, color = "gray30"),
+      plot.caption = element_text(hjust = 1, size = 9, color = "gray50"),
+      legend.position = "top",
+      axis.text = element_text(color = "black"),
+      strip.background = element_rect(fill = "gray90", color = "gray90"),
+      strip.text = element_text(face = "bold", color = "black")
+    )
+)
+
+# 设定显著性符号 (采用放宽的p值标准)
+signif_symbols <- list(cutpoints = c(0, 0.001, 0.01, 0.05, 0.1, 1), 
+                       symbols = c("***", "**", "*", ".", "ns"))
+
+cat("🎨 全局美学风格已设定。\n")
+
+# -------------------------------------------------------------------
+# 步骤 3: 数据导入与处理
+# -------------------------------------------------------------------
+# 3.1 从 Excel 读取植物性状数据
+excel_file <- "data.xlsx"
+if (!file.exists(excel_file)) { stop("❌ 错误: 'data.xlsx' 文件未在当前工作目录中找到。") }
+
+sheet_names <- c("1-1", "1-2", "2-1", "2-2", "3-1", "3-2")
+data_col_names <- c("ID", "Name_CH", "Name_LAT", "Family", "Genus", "Leaf_Area_cm2", 
+                    "Leaf_Length_cm", "Leaf_Width_cm", "Leaf_Dry_Mass_g", "SLA")
+
+full_data <- map_dfr(sheet_names, ~{
+  read_excel(excel_file, sheet = .x, col_names = FALSE, skip = 1) %>%
+    select(1:10) %>%
+    set_names(data_col_names) %>%
+    mutate(Group = .x)
+})
+cat("ℹ️ 植物性状数据已成功读取并整合。\n")
+
+# 3.2 清洗植物性状数据
+trait_cols <- c("Leaf_Area_cm2", "Leaf_Length_cm", "Leaf_Width_cm", "Leaf_Dry_Mass_g", "SLA")
+full_data <- full_data %>%
+  mutate(across(all_of(trait_cols), as.numeric)) %>%
+  mutate(Leaf_Dry_Mass_g = na_if(Leaf_Dry_Mass_g, 0)) %>%
+  mutate(Position = factor(case_when(
+    str_detect(Group, "-1$") ~ "坡底 (Slope Bottom)", 
+    str_detect(Group, "-2$") ~ "坡顶 (Slope Top)"
+  ), levels = c("坡底 (Slope Bottom)", "坡顶 (Slope Top)")))
+
+# 3.3 硬编码环境因子数据
+env_data <- tibble(
+  Group = c("1-1", "2-1", "3-1", "1-2", "2-2", "3-2"),
+  Position = rep(c("坡底 (Slope Bottom)", "坡顶 (Slope Top)"), each = 3),
+  Altitude = c(339, 344, 340, 366, 358, 354), Temperature = c(29.6, 30.5, 30.8, 28.5, 31.4, 32),
+  Humidity = c(75.7, 68.5, 73.8, 86.3, 71.5, 68.8), Illumination = c(0.44, 0.46, 0.47, 0.54, 0.61, 0.47),
+  Soil_pH = c(5.93, 5.71, 5.94, 6.14, 6, 6.11)
+)
+cat("✅ 数据预处理完成。\n")
+
+# 3.4 创建图片保存目录
+if (!dir.exists("plots")) dir.create("plots")
+
+# ===================================================================
+# 分析流程开始
+# ===================================================================
+
+# -------------------------------------------------------------------
+# 分析一: 微环境差异分析（改为分别输出五张图）
+# -------------------------------------------------------------------
+cat("\n--- 正在执行分析一: 微环境差异分析 ---\n")
+env_factors_long <- env_data %>% pivot_longer(cols = -c(Group, Position), names_to = "Factor", values_to = "Value")
+
+env_factors <- unique(env_factors_long$Factor)
+plots_env <- map(env_factors, ~{
+  df_plot <- env_factors_long %>% filter(Factor == .x, is.finite(Value))
+  # 手动计算 t 检验并添加文本标注
+  p_raw <- tryCatch(stats::t.test(Value ~ Position, data = df_plot)$p.value, error = function(e) NA_real_)
+  y_base <- max(df_plot$Value, na.rm = TRUE)
+  y_rng <- diff(range(df_plot$Value, na.rm = TRUE))
+  y_pos <- y_base + y_rng * 0.1
+  p_label <- if(!is.na(p_raw) && p_raw < 0.05) sprintf("p = %.3g", p_raw) else ""
+
+  p <- ggplot(df_plot, aes(x = Position, y = Value, fill = Position)) +
+    geom_boxplot(alpha = 0.8, width = 0.6, outlier.shape = NA) +
+    geom_jitter(width = 0.1, alpha = 0.45, size = 1.4) +
+    stat_summary(fun = median, geom = "point", size = 2, color = "black") +
+    {if(p_label != "") annotate("text", x = 1.5, y = y_pos, label = p_label, size = 4, hjust = 0.5) else NULL} +
+    scale_fill_manual(values = color_palette) +
+    scale_y_continuous(expand = expansion(mult = c(0.06, 0.18))) +
+    coord_cartesian(clip = "off") +
+    labs(title = paste0("微环境因子差异比较 - ", .x), x = NULL, y = .x) +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(angle = 30, hjust = 1),
+      plot.margin = margin(12, 18, 12, 18)
+    )
+  ggsave(filename = paste0("plots/1_Environment_Comparison_", .x, ".png"), plot = p, width = 6, height = 6, dpi = 300)
+  return(p)
+})
+cat("✅ 图 1: 5张微环境因子差异比较图已分别生成。\n")
+
+# -------------------------------------------------------------------
+# 分析二: 单个性状比较
+# -------------------------------------------------------------------
+cat("\n--- 正在执行分析二: 单个性状比较 ---\n")
+# 使用 purrr::map 来循环绘图，代码更简洁
+plots_trait_comparison <- map(trait_cols, ~{
+  plot_data <- full_data %>% filter(is.finite(.data[[.x]]))
+  # 计算 Wilcoxon 检验并添加文本标注（使用近似 p 值避免并列值警告）
+  p_raw <- tryCatch(stats::wilcox.test(plot_data[[.x]] ~ plot_data$Position, exact = FALSE)$p.value, error = function(e) NA_real_)
+  y_base <- max(plot_data[[.x]], na.rm = TRUE)
+  y_rng <- diff(range(plot_data[[.x]], na.rm = TRUE))
+  y_pos <- y_base + y_rng * 0.08
+  p_label <- if(!is.na(p_raw) && p_raw < 0.05) sprintf("p = %.3g", p_raw) else ""
+
+  p <- ggplot(plot_data, aes(x = Position, y = .data[[.x]], fill = Position)) +
+    geom_violin(trim = FALSE, alpha = 0.25, width = 0.9, color = NA) +
+    geom_boxplot(width = 0.18, fill = "white", outlier.shape = NA) +
+    geom_jitter(width = 0.12, alpha = 0.45, size = 1.6) +
+    stat_summary(fun = median, geom = "point", size = 2, color = "black") +
+    {if(p_label != "") annotate("text", x = 1.5, y = y_pos, label = p_label, size = 4, hjust = 0.5) else NULL} +
+    scale_fill_manual(values = color_palette, name = "地形位置") +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+    labs(title = .x, x = NULL, y = "性状值")
+
+  ggsave(filename = paste0("plots/2_Trait_Comparison_", .x, ".png"), plot = p, width = 6, height = 6, dpi = 300)
+  return(p)
+})
+cat("✅ 图 2: 5个单性状比较图已分别生成。\n")
+
+# -------------------------------------------------------------------
+# 分析三: 物种层面响应
+# -------------------------------------------------------------------
+cat("\n--- 正在执行分析三: 物种层面响应 ---\n")
+common_species <- full_data %>% count(Name_CH, Position) %>% 
+  pivot_wider(names_from = Position, values_from = n, values_fill = 0) %>% 
+  filter(if_all(everything(), ~ . >= 3)) %>% pull(Name_CH)
+
+if (length(common_species) > 0) {
+  species_data <- full_data %>% filter(Name_CH %in% common_species)
+  key_traits_species <- c("SLA", "Leaf_Dry_Mass_g")
+  
+  plots_species <- map(key_traits_species, ~{
+    plot_df <- species_data %>% filter(is.finite(.data[[.x]]))
+    valid_species <- plot_df %>%
+      group_by(Name_CH) %>%
+      summarise(n_groups = n_distinct(Position), .groups = "drop") %>%
+      filter(n_groups == 2) %>% pull(Name_CH)
+    plot_df <- plot_df %>% filter(Name_CH %in% valid_species)
+    if (nrow(plot_df) == 0) return(NULL)
+
+    # 计算每个物种的 Wilcoxon 检验并准备标注
+    species_p_values <- plot_df %>% 
+      group_by(Name_CH) %>%
+      summarise(
+        p = tryCatch(stats::wilcox.test(.data[[.x]] ~ Position, exact = FALSE)$p.value, error = function(e) NA_real_),
+        y_max = max(.data[[.x]], na.rm = TRUE),
+        y_range = diff(range(.data[[.x]], na.rm = TRUE)),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        y_pos = y_max + y_range * 0.07,
+        p_label = if_else(!is.na(p) & p < 0.05, sprintf("p = %.3g", p), "")
+      )
+
+    p <- ggplot(plot_df, aes(x = Position, y = .data[[.x]], fill = Position)) +
+      geom_boxplot(width = 0.6, outlier.shape = NA) +
+      geom_jitter(width = 0.1, alpha = 0.4, size = 1.3) +
+      stat_summary(fun = median, geom = "point", size = 1.8, color = "black") +
+      geom_text(data = species_p_values %>% filter(p_label != ""), 
+                aes(x = 1.5, y = y_pos, label = p_label), 
+                inherit.aes = FALSE, size = 3.5, hjust = 0.5) +
+      facet_wrap(~ Name_CH, scales = "free_y") +
+      scale_fill_manual(values = color_palette) +
+      scale_y_continuous(expand = expansion(mult = c(0.05, 0.15))) +
+      labs(title = paste("关键物种的", .x, "响应"), x = NULL, y = .x) +
+      theme(legend.position = "none", axis.text.x = element_text(angle = 30, hjust = 1))
+
+    plot_width <- max(6, 3 + 3 * length(unique(plot_df$Name_CH)))
+    ggsave(filename = paste0("plots/3_Species_Response_", .x, ".png"), 
+           plot = p, width = plot_width, height = 6, dpi = 300)
+  })
+  cat("✅ 图 3: 关键物种响应分析图已生成。\n")
+} else {
+  cat("ℹ️ 未找到足够样本的共同物种，跳过此分析。\n")
+}
+
+## -------------------------------------------------------------------
+## 分析四: 环境变量 × 性状 单变量线性回归（组水平）
+## -------------------------------------------------------------------
+cat("\n--- 正在执行分析四: 环境变量 × 性状 单变量线性回归 ---\n")
+
+# 组水平性状汇总（使用中位数）
+trait_group_summary <- full_data %>%
+  group_by(Group) %>%
+  summarise(across(all_of(trait_cols), ~ median(.x, na.rm = TRUE)), .groups = "drop")
+
+# 合并环境与组性状
+env_trait_group <- env_data %>% left_join(trait_group_summary, by = "Group")
+
+# 环境与性状中文标签
+env_labels <- c(
+  Altitude = "海拔 (m)",
+  Temperature = "温度 (°C)",
+  Humidity = "湿度 (%)",
+  Illumination = "照度",
+  Soil_pH = "土壤 pH"
+)
+
+trait_labels <- c(
+  Leaf_Area_cm2 = "叶面积 (cm²)",
+  Leaf_Length_cm = "叶长 (cm)",
+  Leaf_Width_cm = "叶宽 (cm)",
+  Leaf_Dry_Mass_g = "叶干重 (g)",
+  SLA = "SLA"
+)
+
+env_vars <- names(env_labels)
+
+lm_results <- list()
+
+for (env_var in env_vars) {
+  for (trait in trait_cols) {
+    df <- env_trait_group %>% select(all_of(c(env_var, trait))) %>%
+      rename(x = all_of(env_var), y = all_of(trait)) %>%
+      filter(is.finite(x), is.finite(y))
+
+    if (nrow(df) >= 3) {
+      fit <- lm(y ~ x, data = df)
+      g <- broom::glance(fit)
+      t <- broom::tidy(fit)
+
+      p <- ggplot(df, aes(x = x, y = y)) +
+        geom_point(size = 2.5, alpha = 0.85, color = "#111827") +
+        geom_smooth(method = "lm", se = TRUE, color = "#2563EB", fill = "#93C5FD", alpha = 0.35) +
+        ggpubr::stat_regline_equation(label.y.npc = 0.98, size = 5) +
+        ggpubr::stat_cor(label.y.npc = 0.9, size = 5) +
+        scale_y_continuous(expand = expansion(mult = c(0.05, 0.1))) +
+        scale_x_continuous(expand = expansion(mult = c(0.05, 0.05))) +
+        labs(title = paste0(trait_labels[[trait]], " vs ", env_labels[[env_var]]),
+             x = env_labels[[env_var]], y = trait_labels[[trait]]) +
+        theme(plot.margin = margin(12, 16, 12, 16))
+
+      out_name <- paste0("plots/4_LM_", trait, "_vs_", env_var, ".png")
+      ggsave(out_name, plot = p, width = 6.2, height = 5.6, dpi = 300)
+
+      slope_row <- t %>% dplyr::filter(term == "x")
+      lm_results[[length(lm_results) + 1]] <- tibble(
+        Trait = trait,
+        EnvVar = env_var,
+        Intercept = t$estimate[t$term == "(Intercept)"],
+        Slope = slope_row$estimate,
+        StdErr_Slope = slope_row$std.error,
+        t_Slope = slope_row$statistic,
+        p_Slope = slope_row$p.value,
+        R2 = g$r.squared,
+        Adj_R2 = g$adj.r.squared,
+        F_Statistic = g$statistic,
+        p_Model = g$p.value,
+        N = nrow(df)
+      )
+    }
+  }
+}
+
+if (length(lm_results)) {
+  lm_tbl <- dplyr::bind_rows(lm_results) %>% dplyr::arrange(Trait, EnvVar)
+  readr::write_csv(lm_tbl, file = "plots/4_LM_Summary.csv")
+  cat("✅ 图 4: 单变量线性回归已完成，图与表已输出。\n")
+} else {
+  cat("ℹ️ 图 4: 没有足够数据进行单变量线性回归。\n")
+}
+
+cat("\n🎉 ===================== 所有分析全部结束 ===================== 🎉\n")
+cat("所有结果图表已保存在 'plots' 文件夹中。\n")
+

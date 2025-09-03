@@ -299,6 +299,10 @@ class LeafHoleDetector:
         masked_image = cv2.bitwise_and(image, image, mask=leaf_mask)
         gray = cv2.cvtColor(masked_image, cv2.COLOR_BGR2GRAY)
         
+        # 新增：应用中值滤波来抑制细长的叶脉
+        # 内核大小可以根据叶脉的粗细进行调整，5x5是一个比较通用的选择
+        gray = cv2.medianBlur(gray, 5)
+        
         # Method 1: Direct bright region detection
         _, bright_regions = cv2.threshold(gray, 230, 255, cv2.THRESH_BINARY)
         bright_regions = cv2.bitwise_and(bright_regions, leaf_mask)
@@ -325,13 +329,57 @@ class LeafHoleDetector:
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if min_hole_area < area < max_hole_area:
-                hole_contours.append(cnt)
+                # 新增：增加形状判断，过滤掉像叶脉一样的细长轮廓
+                if self.is_likely_hole(cnt):
+                    hole_contours.append(cnt)
         
         # Create final holes binary mask
         final_holes = np.zeros_like(combined_holes)
         cv2.fillPoly(final_holes, hole_contours, 255)
         
         return hole_contours, final_holes
+    
+    def is_likely_hole(self, contour: np.ndarray, min_circularity: float = 0.2) -> bool:
+        """
+        判断一个轮廓是否可能是一个洞，而不是细长的叶脉。
+        洞通常形状较为紧凑、接近圆形，而叶脉则细长。
+        我们使用"圆度"和"长宽比"作为判断依据。
+        """
+        perimeter = cv2.arcLength(contour, True)
+        if perimeter == 0:
+            return False
+
+        area = cv2.contourArea(contour)
+        if area == 0:
+            return False
+            
+        # 圆度计算公式: (4 * pi * area) / (perimeter^2)
+        # 圆的圆度为1，细长形状的圆度接近0
+        circularity = (4 * np.pi * area) / (perimeter * perimeter)
+        
+        # 增加一个对细长形状的额外判断
+        aspect_ratio = 0
+        try:
+            _, (width, height), _ = cv2.minAreaRect(contour)
+            if min(width, height) > 0:
+                aspect_ratio = max(width, height) / min(width, height)
+        except:
+            # 在某些退化的情况下，minAreaRect可能会失败
+            pass
+            
+        # 如果形状非常细长（高长宽比），也认为是叶脉
+        if aspect_ratio > 5.0:
+            if self.debug:
+                print(f"Filtered by aspect ratio: {aspect_ratio:.2f}")
+            return False
+
+        # 圆度阈值可以根据实际情况调整，这里设置为0.2
+        if circularity < min_circularity:
+            if self.debug:
+                print(f"Filtered by circularity: {circularity:.2f}")
+            return False
+            
+        return True
     
     def detect_edge_holes(self, leaf_mask: np.ndarray) -> np.ndarray:
         """
@@ -412,12 +460,152 @@ class LeafHoleDetector:
         ratio = hole_area / leaf_area
         return ratio
     
+    def calculate_leaf_length(self, leaf_contour: np.ndarray) -> Tuple[float, Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        计算叶片长度，使用主轴长度法
+        返回: (叶长像素值, ((起点x, 起点y), (终点x, 终点y)))
+        """
+        if leaf_contour is None:
+            return 0.0, ((0, 0), (0, 0))
+        
+        # 确保轮廓有足够的点数
+        if len(leaf_contour) < 5:
+            if self.debug:
+                print(f"Leaf contour has only {len(leaf_contour)} points, using fallback method")
+            # 直接使用最大距离方法
+            return self._calculate_max_distance(leaf_contour)
+        
+        # 方法1：使用最小外接椭圆的长轴
+        try:
+            # 计算最小外接椭圆
+            ellipse = cv2.fitEllipse(leaf_contour)
+            center, axes, angle = ellipse
+            
+            # 检查椭圆参数是否有效
+            if any(np.isnan([center[0], center[1], axes[0], axes[1], angle])) or any(np.isinf([center[0], center[1], axes[0], axes[1], angle])):
+                if self.debug:
+                    print("Invalid ellipse parameters, using fallback method")
+                return self._calculate_max_distance(leaf_contour)
+            
+            # 获取长轴长度（椭圆的长轴就是叶片的主轴）
+            major_axis_length = max(axes)
+            
+            # 计算长轴的起点和终点坐标
+            angle_rad = np.radians(angle)
+            half_major = major_axis_length / 2
+            
+            # 如果长轴是水平方向更长，使用对应的轴
+            if axes[0] > axes[1]:
+                # 长轴沿着椭圆的主轴方向
+                dx = half_major * np.cos(angle_rad)
+                dy = half_major * np.sin(angle_rad)
+            else:
+                # 长轴沿着椭圆的次轴方向
+                dx = half_major * np.cos(angle_rad + np.pi/2)
+                dy = half_major * np.sin(angle_rad + np.pi/2)
+            
+            start_point = (int(center[0] - dx), int(center[1] - dy))
+            end_point = (int(center[0] + dx), int(center[1] + dy))
+            
+            return major_axis_length, (start_point, end_point)
+            
+        except Exception as e:
+            # 如果椭圆拟合失败，使用备用方法
+            if self.debug:
+                print(f"Ellipse fitting failed: {e}, using fallback method")
+            return self._calculate_max_distance(leaf_contour)
+    
+    def _calculate_max_distance(self, leaf_contour: np.ndarray) -> Tuple[float, Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        计算轮廓上任意两点间的最大距离（备用方法）
+        """
+        if leaf_contour is None or len(leaf_contour) < 2:
+            return 0.0, ((0, 0), (0, 0))
+        
+        max_distance = 0
+        best_points = ((0, 0), (0, 0))
+        
+        # 为了提高效率，我们只检查轮廓上的部分点
+        contour_points = leaf_contour.reshape(-1, 2)
+        step = max(1, len(contour_points) // 50)  # 最多检查50个点
+        
+        for i in range(0, len(contour_points), step):
+            for j in range(i + step, len(contour_points), step):
+                p1 = contour_points[i]
+                p2 = contour_points[j]
+                distance = np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
+                
+                if distance > max_distance:
+                    max_distance = distance
+                    best_points = (tuple(p1), tuple(p2))
+        
+        return max_distance, best_points
+
+    def calculate_leaf_width(self, leaf_contour: np.ndarray) -> Tuple[float, Tuple[Tuple[int, int], Tuple[int, int]]]:
+        """
+        计算叶片宽度，使用主轴垂直方向的最大距离
+        返回: (叶宽像素值, ((起点x, 起点y), (终点x, 终点y)))
+        """
+        if leaf_contour is None:
+            return 0.0, ((0, 0), (0, 0))
+        
+        # 确保轮廓有足够的点数
+        if len(leaf_contour) < 5:
+            if self.debug:
+                print(f"Leaf contour has only {len(leaf_contour)} points, using fallback for width")
+            # 对于点数不足的情况，返回一个估算的宽度（长度的一半）
+            length, _ = self._calculate_max_distance(leaf_contour)
+            return length * 0.5, ((0, 0), (0, 0))
+        
+        try:
+            # 计算最小外接椭圆
+            ellipse = cv2.fitEllipse(leaf_contour)
+            center, axes, angle = ellipse
+            
+            # 检查椭圆参数是否有效
+            if any(np.isnan([center[0], center[1], axes[0], axes[1], angle])) or any(np.isinf([center[0], center[1], axes[0], axes[1], angle])):
+                if self.debug:
+                    print("Invalid ellipse parameters for width, using fallback method")
+                length, _ = self._calculate_max_distance(leaf_contour)
+                return length * 0.5, ((0, 0), (0, 0))
+            
+            # 获取短轴长度（椭圆的短轴就是叶片的宽度）
+            minor_axis_length = min(axes)
+            
+            # 计算短轴的起点和终点坐标
+            angle_rad = np.radians(angle)
+            half_minor = minor_axis_length / 2
+            
+            # 短轴垂直于长轴
+            if axes[0] > axes[1]:
+                # 短轴沿着椭圆的次轴方向
+                dx = half_minor * np.cos(angle_rad + np.pi/2)
+                dy = half_minor * np.sin(angle_rad + np.pi/2)
+            else:
+                # 短轴沿着椭圆的主轴方向
+                dx = half_minor * np.cos(angle_rad)
+                dy = half_minor * np.sin(angle_rad)
+            
+            start_point = (int(center[0] - dx), int(center[1] - dy))
+            end_point = (int(center[0] + dx), int(center[1] + dy))
+            
+            return minor_axis_length, (start_point, end_point)
+            
+        except Exception as e:
+            # 如果椭圆拟合失败，使用估算方法
+            if self.debug:
+                print(f"Ellipse fitting failed for width: {e}, using fallback method")
+            length, _ = self._calculate_max_distance(leaf_contour)
+            return length * 0.5, ((0, 0), (0, 0))
+    
     def visualize_results(self, original: np.ndarray, enhanced: np.ndarray, 
                          leaf_mask: np.ndarray, holes_binary: np.ndarray, 
                          hole_contours: List[np.ndarray], hole_ratio: float,
-                         pixels_per_cm: Optional[float] = None):
+                         pixels_per_cm: Optional[float] = None,
+                         leaf_length_info: Optional[Tuple] = None,
+                         leaf_width_info: Optional[Tuple] = None):
         """
-        Visualize detection results with absolute measurements
+        Visualize detection results with absolute measurements including leaf length
         """
         fig, axes = plt.subplots(2, 3, figsize=(15, 10))
         
@@ -444,9 +632,31 @@ class LeafHoleDetector:
         axes[0,1].set_title('Enhanced Image')
         axes[0,1].axis('off')
         
-        # Leaf segmentation
-        axes[0,2].imshow(leaf_mask, cmap='gray')
-        axes[0,2].set_title('Leaf Segmentation')
+        # Leaf segmentation with length and width lines
+        leaf_display = cv2.cvtColor(leaf_mask, cv2.COLOR_GRAY2BGR)
+        
+        # Draw leaf length line
+        if leaf_length_info:
+            length_pixels, (start_pt, end_pt) = leaf_length_info
+            cv2.line(leaf_display, start_pt, end_pt, (0, 255, 0), 2)  # Green line for length
+            # Add length label
+            mid_x = (start_pt[0] + end_pt[0]) // 2
+            mid_y = (start_pt[1] + end_pt[1]) // 2
+            cv2.putText(leaf_display, f'L:{length_pixels:.0f}px', (mid_x, mid_y-10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        
+        # Draw leaf width line
+        if leaf_width_info:
+            width_pixels, (start_pt, end_pt) = leaf_width_info
+            cv2.line(leaf_display, start_pt, end_pt, (255, 0, 0), 2)  # Blue line for width
+            # Add width label
+            mid_x = (start_pt[0] + end_pt[0]) // 2
+            mid_y = (start_pt[1] + end_pt[1]) // 2
+            cv2.putText(leaf_display, f'W:{width_pixels:.0f}px', (mid_x, mid_y+20), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        
+        axes[0,2].imshow(leaf_display)
+        axes[0,2].set_title('Leaf Segmentation with Measurements')
         axes[0,2].axis('off')
         
         # Hole detection
@@ -457,6 +667,15 @@ class LeafHoleDetector:
         # Result overlay
         result = enhanced.copy()
         cv2.drawContours(result, hole_contours, -1, (0, 0, 255), 2)
+        
+        # Also draw length and width lines on result
+        if leaf_length_info:
+            length_pixels, (start_pt, end_pt) = leaf_length_info
+            cv2.line(result, start_pt, end_pt, (0, 255, 0), 2)
+        if leaf_width_info:
+            width_pixels, (start_pt, end_pt) = leaf_width_info
+            cv2.line(result, start_pt, end_pt, (255, 0, 0), 2)
+        
         axes[1,1].imshow(cv2.cvtColor(result, cv2.COLOR_BGR2RGB))
         axes[1,1].set_title(f'Final Result\nHole Ratio: {hole_ratio:.2%}')
         axes[1,1].axis('off')
@@ -467,22 +686,47 @@ class LeafHoleDetector:
         
         y_pos = 0.9
         axes[1,2].text(0.1, y_pos, f'Leaf area: {leaf_area_pixels} pixels', transform=axes[1,2].transAxes)
-        y_pos -= 0.1
+        y_pos -= 0.08
         axes[1,2].text(0.1, y_pos, f'Hole area: {hole_area_pixels} pixels', transform=axes[1,2].transAxes)
-        y_pos -= 0.1
+        y_pos -= 0.08
         axes[1,2].text(0.1, y_pos, f'Hole count: {len(hole_contours)}', transform=axes[1,2].transAxes)
-        y_pos -= 0.1
+        y_pos -= 0.08
         axes[1,2].text(0.1, y_pos, f'Area ratio: {hole_ratio:.2%}', transform=axes[1,2].transAxes, fontweight='bold')
         
+        # Add leaf length and width info
+        if leaf_length_info:
+            length_pixels, _ = leaf_length_info
+            y_pos -= 0.08
+            axes[1,2].text(0.1, y_pos, f'Leaf length: {length_pixels:.1f} px', transform=axes[1,2].transAxes, color='green')
+        
+        if leaf_width_info:
+            width_pixels, _ = leaf_width_info
+            y_pos -= 0.08
+            axes[1,2].text(0.1, y_pos, f'Leaf width: {width_pixels:.1f} px', transform=axes[1,2].transAxes, color='blue')
+        
         if pixels_per_cm is not None:
-            y_pos -= 0.15
+            y_pos -= 0.1
             leaf_area_cm2 = self.convert_to_absolute_area(leaf_area_pixels, pixels_per_cm)
             hole_area_cm2 = self.convert_to_absolute_area(hole_area_pixels, pixels_per_cm)
             axes[1,2].text(0.1, y_pos, f'Leaf area: {leaf_area_cm2:.2f} cm²', transform=axes[1,2].transAxes, color='green', fontweight='bold')
-            y_pos -= 0.1
+            y_pos -= 0.08
             axes[1,2].text(0.1, y_pos, f'Hole area: {hole_area_cm2:.2f} cm²', transform=axes[1,2].transAxes, color='red', fontweight='bold')
-            y_pos -= 0.1
-            axes[1,2].text(0.1, y_pos, f'Scale: {pixels_per_cm:.1f} px/cm', transform=axes[1,2].transAxes, color='blue')
+            
+            # Add absolute length and width measurements
+            if leaf_length_info:
+                length_pixels, _ = leaf_length_info
+                length_cm = length_pixels / pixels_per_cm
+                y_pos -= 0.08
+                axes[1,2].text(0.1, y_pos, f'Leaf length: {length_cm:.2f} cm', transform=axes[1,2].transAxes, color='green', fontweight='bold')
+            
+            if leaf_width_info:
+                width_pixels, _ = leaf_width_info
+                width_cm = width_pixels / pixels_per_cm
+                y_pos -= 0.08
+                axes[1,2].text(0.1, y_pos, f'Leaf width: {width_cm:.2f} cm', transform=axes[1,2].transAxes, color='blue', fontweight='bold')
+            
+            y_pos -= 0.08
+            axes[1,2].text(0.1, y_pos, f'Scale: {pixels_per_cm:.1f} px/cm', transform=axes[1,2].transAxes, color='black')
         
         axes[1,2].set_title('Statistics')
         axes[1,2].axis('off')
@@ -521,55 +765,85 @@ class LeafHoleDetector:
         print("3. Detecting holes...")
         hole_contours, holes_binary = self.detect_holes(enhanced, leaf_mask)
         
-        # 4. Calculate areas
+        # 4. Calculate leaf dimensions
+        print("4. Calculating leaf dimensions...")
+        try:
+            leaf_length_info = self.calculate_leaf_length(leaf_contour)
+            leaf_width_info = self.calculate_leaf_width(leaf_contour)
+        except Exception as e:
+            print(f"Error calculating leaf dimensions: {e}")
+            # 提供默认值
+            leaf_length_info = (0.0, ((0, 0), (0, 0)))
+            leaf_width_info = (0.0, ((0, 0), (0, 0)))
+        
+        # 5. Calculate areas
         leaf_area_pixels = cv2.countNonZero(leaf_mask)
         hole_area_pixels = cv2.countNonZero(holes_binary)
         hole_ratio = self.calculate_hole_ratio(leaf_mask, holes_binary)
         
-        # 5. Calculate absolute areas if reference square is detected
+        # 6. Calculate absolute areas if reference square is detected
+        # 确保叶长和叶宽数据总是有效的
+        leaf_length_pixels = leaf_length_info[0] if leaf_length_info and len(leaf_length_info) > 0 else 0.0
+        leaf_width_pixels = leaf_width_info[0] if leaf_width_info and len(leaf_width_info) > 0 else 0.0
+        
         results = {
             'hole_ratio': hole_ratio,
             'leaf_area_pixels': leaf_area_pixels,
             'hole_area_pixels': hole_area_pixels,
             'hole_count': len(hole_contours),
             'pixels_per_cm': pixels_per_cm,
-            'has_reference': pixels_per_cm is not None
+            'has_reference': pixels_per_cm is not None,
+            'leaf_length_pixels': leaf_length_pixels,
+            'leaf_width_pixels': leaf_width_pixels
         }
         
         if pixels_per_cm is not None:
             leaf_area_cm2 = self.convert_to_absolute_area(leaf_area_pixels, pixels_per_cm)
             hole_area_cm2 = self.convert_to_absolute_area(hole_area_pixels, pixels_per_cm)
+            leaf_length_cm = leaf_length_pixels / pixels_per_cm if leaf_length_pixels > 0 else 0.0
+            leaf_width_cm = leaf_width_pixels / pixels_per_cm if leaf_width_pixels > 0 else 0.0
             
             results.update({
                 'leaf_area_cm2': leaf_area_cm2,
                 'hole_area_cm2': hole_area_cm2,
+                'leaf_length_cm': leaf_length_cm,
+                'leaf_width_cm': leaf_width_cm,
                 'reference_detected': True
             })
             
             print(f"Leaf area: {leaf_area_cm2:.2f} cm²")
             print(f"Hole area: {hole_area_cm2:.2f} cm²")
+            print(f"Leaf length: {leaf_length_cm:.2f} cm")
+            print(f"Leaf width: {leaf_width_cm:.2f} cm")
         else:
             results.update({
                 'leaf_area_cm2': None,
                 'hole_area_cm2': None,
+                'leaf_length_cm': None,
+                'leaf_width_cm': None,
                 'reference_detected': False
             })
             print("No reference square detected - only pixel measurements available")
+            print(f"Leaf length: {leaf_length_pixels:.1f} pixels")
+            print(f"Leaf width: {leaf_width_pixels:.1f} pixels")
         
         print(f"Detection complete! Hole area ratio: {hole_ratio:.2%}")
         
-        # 6. Store processed data for visualization
+        # 7. Store processed data for visualization
         results.update({
             'original_image': image,
             'enhanced_image': enhanced,
             'leaf_mask': leaf_mask,
             'holes_binary': holes_binary,
-            'hole_contours': hole_contours
+            'hole_contours': hole_contours,
+            'leaf_length_info': leaf_length_info,
+            'leaf_width_info': leaf_width_info
         })
         
-        # 7. Visualize results
+        # 8. Visualize results
         if self.debug:
-            self.visualize_results(image, enhanced, leaf_mask, holes_binary, hole_contours, hole_ratio, pixels_per_cm)
+            self.visualize_results(image, enhanced, leaf_mask, holes_binary, hole_contours, 
+                                 hole_ratio, pixels_per_cm, leaf_length_info, leaf_width_info)
         
         return results
 

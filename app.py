@@ -14,7 +14,7 @@ import uuid
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['RESULTS_FOLDER'] = 'results'
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
 app.secret_key = 'your-secret-key-here'  # Change this in production
 
 # Create directories if they don't exist
@@ -87,6 +87,25 @@ def manual_edit():
         
         hole_ratio = hole_area_pixels / leaf_area_pixels if leaf_area_pixels > 0 else 0
         
+        # Calculate leaf dimensions from manual leaf mask
+        leaf_length_pixels = 0
+        leaf_width_pixels = 0
+        if leaf_mask is not None and np.any(leaf_mask):
+            # Find leaf contour from mask
+            leaf_contours, _ = cv2.findContours(leaf_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if leaf_contours:
+                # Use the largest contour as the leaf
+                leaf_contour = max(leaf_contours, key=cv2.contourArea)
+                
+                # Calculate leaf dimensions using the detector
+                from leaf_hole_detection import LeafHoleDetector
+                detector = LeafHoleDetector()
+                leaf_length_info = detector.calculate_leaf_length(leaf_contour)
+                leaf_width_info = detector.calculate_leaf_width(leaf_contour)
+                
+                leaf_length_pixels = leaf_length_info[0]
+                leaf_width_pixels = leaf_width_info[0]
+        
         # Update stored data
         image_data['manual_leaf_mask'] = leaf_mask
         image_data['manual_holes_mask'] = holes_mask
@@ -100,7 +119,9 @@ def manual_edit():
             'hole_area_pixels': hole_area_pixels,
             'hole_count': hole_count,
             'has_reference': pixels_per_cm is not None,
-            'pixels_per_cm': pixels_per_cm
+            'pixels_per_cm': pixels_per_cm,
+            'leaf_length_pixels': leaf_length_pixels,
+            'leaf_width_pixels': leaf_width_pixels
         }
         
         # Add absolute areas if reference is available
@@ -109,16 +130,22 @@ def manual_edit():
             detector = LeafHoleDetector()
             leaf_area_cm2 = detector.convert_to_absolute_area(leaf_area_pixels, pixels_per_cm)
             hole_area_cm2 = detector.convert_to_absolute_area(hole_area_pixels, pixels_per_cm)
+            leaf_length_cm = leaf_length_pixels / pixels_per_cm if leaf_length_pixels > 0 else 0
+            leaf_width_cm = leaf_width_pixels / pixels_per_cm if leaf_width_pixels > 0 else 0
             
             statistics.update({
                 'leaf_area_cm2': leaf_area_cm2,
                 'hole_area_cm2': hole_area_cm2,
+                'leaf_length_cm': leaf_length_cm,
+                'leaf_width_cm': leaf_width_cm,
                 'reference_detected': True
             })
         else:
             statistics.update({
                 'leaf_area_cm2': None,
                 'hole_area_cm2': None,
+                'leaf_length_cm': None,
+                'leaf_width_cm': None,
                 'reference_detected': False
             })
         
@@ -191,6 +218,12 @@ def upload_file():
             if 'error' in processing_results:
                 return jsonify({'error': processing_results['error']}), 400
             
+            # Validate that we have the required leaf dimension data
+            if 'leaf_length_pixels' not in processing_results:
+                processing_results['leaf_length_pixels'] = 0
+            if 'leaf_width_pixels' not in processing_results:
+                processing_results['leaf_width_pixels'] = 0
+            
             # Extract results
             hole_ratio = processing_results['hole_ratio']
             leaf_area_pixels = processing_results['leaf_area_pixels']
@@ -239,6 +272,10 @@ def upload_file():
             holes_b64 = image_to_base64(holes_binary)
             result_b64 = image_to_base64(cv2.cvtColor(result_image, cv2.COLOR_BGR2RGB))
             
+            # Get leaf dimensions
+            leaf_length_pixels = processing_results.get('leaf_length_pixels', 0)
+            leaf_width_pixels = processing_results.get('leaf_width_pixels', 0)
+            
             # Prepare statistics
             statistics = {
                 'leaf_area_pixels': leaf_area_pixels,
@@ -246,7 +283,9 @@ def upload_file():
                 'hole_count': hole_count,
                 'ratio_decimal': hole_ratio,
                 'has_reference': has_reference,
-                'pixels_per_cm': pixels_per_cm
+                'pixels_per_cm': pixels_per_cm,
+                'leaf_length_pixels': leaf_length_pixels,
+                'leaf_width_pixels': leaf_width_pixels
             }
             
             # Add absolute areas if reference is detected
@@ -254,12 +293,16 @@ def upload_file():
                 statistics.update({
                     'leaf_area_cm2': processing_results['leaf_area_cm2'],
                     'hole_area_cm2': processing_results['hole_area_cm2'],
+                    'leaf_length_cm': processing_results.get('leaf_length_cm'),
+                    'leaf_width_cm': processing_results.get('leaf_width_cm'),
                     'reference_detected': True
                 })
             else:
                 statistics.update({
                     'leaf_area_cm2': None,
                     'hole_area_cm2': None,
+                    'leaf_length_cm': None,
+                    'leaf_width_cm': None,
                     'reference_detected': False
                 })
             
@@ -328,6 +371,11 @@ def batch_upload():
                     'error': processing_results['error']
                 })
             else:
+                # Validate that we have the required leaf dimension data
+                if 'leaf_length_pixels' not in processing_results:
+                    processing_results['leaf_length_pixels'] = 0
+                if 'leaf_width_pixels' not in processing_results:
+                    processing_results['leaf_width_pixels'] = 0
                 # Extract key results for batch processing
                 hole_ratio = processing_results['hole_ratio']
                 leaf_area_pixels = processing_results['leaf_area_pixels']
@@ -335,6 +383,8 @@ def batch_upload():
                 hole_count = processing_results['hole_count']
                 pixels_per_cm = processing_results['pixels_per_cm']
                 has_reference = processing_results['has_reference']
+                leaf_length_pixels = processing_results.get('leaf_length_pixels', 0)
+                leaf_width_pixels = processing_results.get('leaf_width_pixels', 0)
                 
                 # Get image data
                 original_image = processing_results['original_image']
@@ -376,7 +426,9 @@ def batch_upload():
                         'hole_count': hole_count,
                         'ratio_decimal': hole_ratio,
                         'has_reference': has_reference,
-                        'pixels_per_cm': pixels_per_cm
+                        'pixels_per_cm': pixels_per_cm,
+                        'leaf_length_pixels': leaf_length_pixels,
+                        'leaf_width_pixels': leaf_width_pixels
                     },
                     'images': images  # Include images for detailed display
                 }
@@ -386,12 +438,16 @@ def batch_upload():
                     result_item['statistics'].update({
                         'leaf_area_cm2': processing_results['leaf_area_cm2'],
                         'hole_area_cm2': processing_results['hole_area_cm2'],
+                        'leaf_length_cm': processing_results.get('leaf_length_cm'),
+                        'leaf_width_cm': processing_results.get('leaf_width_cm'),
                         'reference_detected': True
                     })
                 else:
                     result_item['statistics'].update({
                         'leaf_area_cm2': None,
                         'hole_area_cm2': None,
+                        'leaf_length_cm': None,
+                        'leaf_width_cm': None,
                         'reference_detected': False
                     })
                 
@@ -472,9 +528,9 @@ def export_batch_results():
         writer = csv.writer(output)
         
         # Write header
-        header = ['Filename', 'Success', 'Hole Ratio', 'Leaf Area (pixels)', 'Hole Area (pixels)', 'Hole Count']
+        header = ['Filename', 'Success', 'Hole Ratio', 'Leaf Area (pixels)', 'Hole Area (pixels)', 'Hole Count', 'Leaf Length (pixels)', 'Leaf Width (pixels)']
         if any(r.get('statistics', {}).get('has_reference', False) for r in results if r.get('success')):
-            header.extend(['Leaf Area (cm²)', 'Hole Area (cm²)', 'Reference Detected', 'Pixels per cm'])
+            header.extend(['Leaf Area (cm²)', 'Hole Area (cm²)', 'Leaf Length (cm)', 'Leaf Width (cm)', 'Reference Detected', 'Pixels per cm'])
         writer.writerow(header)
         
         # Write data rows
@@ -487,24 +543,28 @@ def export_batch_results():
                     result.get('hole_ratio', ''),
                     stats.get('leaf_area_pixels', ''),
                     stats.get('hole_area_pixels', ''),
-                    stats.get('hole_count', '')
+                    stats.get('hole_count', ''),
+                    f"{stats.get('leaf_length_pixels', 0):.1f}",
+                    f"{stats.get('leaf_width_pixels', 0):.1f}"
                 ]
                 
                 if stats.get('has_reference'):
                     row.extend([
                         f"{stats.get('leaf_area_cm2', 0):.2f}",
                         f"{stats.get('hole_area_cm2', 0):.2f}",
+                        f"{stats.get('leaf_length_cm', 0):.2f}",
+                        f"{stats.get('leaf_width_cm', 0):.2f}",
                         'Yes',
                         f"{stats.get('pixels_per_cm', 0):.2f}"
                     ])
                 else:
-                    row.extend(['', '', 'No', ''])
+                    row.extend(['', '', '', '', 'No', ''])
                     
                 writer.writerow(row)
             else:
-                row = [result.get('filename', ''), 'No', '', '', '', '']
+                row = [result.get('filename', ''), 'No', '', '', '', '', '', '']
                 if any(r.get('statistics', {}).get('has_reference', False) for r in results if r.get('success')):
-                    row.extend(['', '', '', ''])
+                    row.extend(['', '', '', '', '', ''])
                 writer.writerow(row)
         
         # Get CSV content

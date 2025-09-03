@@ -99,8 +99,7 @@
         
         .image-card img {
             width: 100%;
-            height: 150px;
-            object-fit: cover;
+            height: auto;
         }
         
         .image-card .card-body {
@@ -279,6 +278,22 @@
                         <div class="stat-card hidden" id="holeAreaCm2Card">
                             <div class="stat-value text-danger" id="holeAreaCm2">-</div>
                             <div class="stat-label" data-i18n="holeAreaCm2">虫洞面积 (cm²)</div>
+                        </div>
+                        <div class="stat-card" id="leafLengthCard">
+                            <div class="stat-value text-info" id="leafLength">-</div>
+                            <div class="stat-label" data-i18n="leafLength">叶片长度</div>
+                        </div>
+                        <div class="stat-card" id="leafWidthCard">
+                            <div class="stat-value text-info" id="leafWidth">-</div>
+                            <div class="stat-label" data-i18n="leafWidth">叶片宽度</div>
+                        </div>
+                        <div class="stat-card hidden" id="leafLengthCmCard">
+                            <div class="stat-value text-info" id="leafLengthCm">-</div>
+                            <div class="stat-label" data-i18n="leafLengthCm">叶片长度 (cm)</div>
+                        </div>
+                        <div class="stat-card hidden" id="leafWidthCmCard">
+                            <div class="stat-value text-info" id="leafWidthCm">-</div>
+                            <div class="stat-label" data-i18n="leafWidthCm">叶片宽度 (cm)</div>
                         </div>
                     </div>
 
@@ -593,13 +608,25 @@
                 method: 'POST',
                 body: formData
             })
-            .then(response => response.json())
-            .then(data => {
-                processingSection.classList.add('hidden');
-                if (data.success) {
-                    displayResults(data);
-                } else {
-                    alert(t('processingError') + ': ' + data.error);
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.text();
+            })
+            .then(text => {
+                try {
+                    const data = JSON.parse(text);
+                    processingSection.classList.add('hidden');
+                    if (data.success) {
+                        displayResults(data);
+                    } else {
+                        alert(t('processingError') + ': ' + data.error);
+                    }
+                } catch (e) {
+                    console.error('JSON parse error:', e);
+                    console.error('Response text:', text);
+                    throw new Error('服务器返回了无效的JSON响应。请检查控制台了解详细信息。');
                 }
             })
             .catch(error => {
@@ -614,18 +641,28 @@
             document.getElementById('holeArea').textContent = data.statistics.hole_area_pixels.toLocaleString();
             document.getElementById('holeCount').textContent = data.statistics.hole_count;
 
+            // Display leaf length and width
+            document.getElementById('leafLength').textContent = data.statistics.leaf_length_pixels ? data.statistics.leaf_length_pixels.toFixed(1) + ' px' : '-';
+            document.getElementById('leafWidth').textContent = data.statistics.leaf_width_pixels ? data.statistics.leaf_width_pixels.toFixed(1) + ' px' : '-';
+
             // Show/hide absolute area columns based on reference detection
             if (data.statistics.has_reference && data.statistics.reference_detected) {
                 document.getElementById('leafAreaCm2Card').classList.remove('hidden');
                 document.getElementById('holeAreaCm2Card').classList.remove('hidden');
+                document.getElementById('leafLengthCmCard').classList.remove('hidden');
+                document.getElementById('leafWidthCmCard').classList.remove('hidden');
                 document.getElementById('referenceInfo').classList.remove('hidden');
                 
                 document.getElementById('leafAreaCm2').textContent = data.statistics.leaf_area_cm2.toFixed(2);
                 document.getElementById('holeAreaCm2').textContent = data.statistics.hole_area_cm2.toFixed(2);
+                document.getElementById('leafLengthCm').textContent = data.statistics.leaf_length_cm ? data.statistics.leaf_length_cm.toFixed(2) + ' cm' : '-';
+                document.getElementById('leafWidthCm').textContent = data.statistics.leaf_width_cm ? data.statistics.leaf_width_cm.toFixed(2) + ' cm' : '-';
                 document.getElementById('pixelsPerCm').textContent = data.statistics.pixels_per_cm.toFixed(1);
             } else {
                 document.getElementById('leafAreaCm2Card').classList.add('hidden');
                 document.getElementById('holeAreaCm2Card').classList.add('hidden');
+                document.getElementById('leafLengthCmCard').classList.add('hidden');
+                document.getElementById('leafWidthCmCard').classList.add('hidden');
                 document.getElementById('referenceInfo').classList.add('hidden');
             }
 
@@ -644,18 +681,28 @@
             document.getElementById('holeArea').textContent = stats.hole_area_pixels.toLocaleString();
             document.getElementById('holeCount').textContent = stats.hole_count;
             
+            // Update leaf length and width
+            document.getElementById('leafLength').textContent = stats.leaf_length_pixels ? stats.leaf_length_pixels.toFixed(1) + ' px' : '-';
+            document.getElementById('leafWidth').textContent = stats.leaf_width_pixels ? stats.leaf_width_pixels.toFixed(1) + ' px' : '-';
+            
             // Update absolute areas if available
             if (stats.has_reference && stats.reference_detected) {
                 document.getElementById('leafAreaCm2Card').classList.remove('hidden');
                 document.getElementById('holeAreaCm2Card').classList.remove('hidden');
+                document.getElementById('leafLengthCmCard').classList.remove('hidden');
+                document.getElementById('leafWidthCmCard').classList.remove('hidden');
                 document.getElementById('referenceInfo').classList.remove('hidden');
                 
                 document.getElementById('leafAreaCm2').textContent = stats.leaf_area_cm2.toFixed(2);
                 document.getElementById('holeAreaCm2').textContent = stats.hole_area_cm2.toFixed(2);
+                document.getElementById('leafLengthCm').textContent = stats.leaf_length_cm ? stats.leaf_length_cm.toFixed(2) + ' cm' : '-';
+                document.getElementById('leafWidthCm').textContent = stats.leaf_width_cm ? stats.leaf_width_cm.toFixed(2) + ' cm' : '-';
                 document.getElementById('pixelsPerCm').textContent = stats.pixels_per_cm.toFixed(1);
             } else {
                 document.getElementById('leafAreaCm2Card').classList.add('hidden');
                 document.getElementById('holeAreaCm2Card').classList.add('hidden');
+                document.getElementById('leafLengthCmCard').classList.add('hidden');
+                document.getElementById('leafWidthCmCard').classList.add('hidden');
                 document.getElementById('referenceInfo').classList.add('hidden');
             }
         }
@@ -943,6 +990,14 @@
                         <div class="stat-value text-warning">${result.statistics.hole_count}</div>
                         <div class="stat-label">${t('holeCount')}</div>
                     </div>
+                    <div class="stat-card">
+                        <div class="stat-value text-info">${result.statistics.leaf_length_pixels ? result.statistics.leaf_length_pixels.toFixed(1) + ' px' : '-'}</div>
+                        <div class="stat-label">${t('leafLength')}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value text-info">${result.statistics.leaf_width_pixels ? result.statistics.leaf_width_pixels.toFixed(1) + ' px' : '-'}</div>
+                        <div class="stat-label">${t('leafWidth')}</div>
+                    </div>
                     ${result.statistics.reference_detected ? `
                         <div class="stat-card">
                             <div class="stat-value text-success">${result.statistics.leaf_area_cm2.toFixed(2)}</div>
@@ -951,6 +1006,14 @@
                         <div class="stat-card">
                             <div class="stat-value text-danger">${result.statistics.hole_area_cm2.toFixed(2)}</div>
                             <div class="stat-label">${t('holeAreaCm2')}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-info">${result.statistics.leaf_length_cm ? result.statistics.leaf_length_cm.toFixed(2) + ' cm' : '-'}</div>
+                            <div class="stat-label">${t('leafLengthCm')}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value text-info">${result.statistics.leaf_width_cm ? result.statistics.leaf_width_cm.toFixed(2) + ' cm' : '-'}</div>
+                            <div class="stat-label">${t('leafWidthCm')}</div>
                         </div>
                     ` : ''}
                 </div>
